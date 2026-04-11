@@ -284,6 +284,8 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\project\main.cpp" />
+    <ClInclude Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\project\terrain.h" />
+    <ClCompile Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\project\terrain.cpp" />
     <None Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\project\background.frag">
     </None>
     <None Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\project\background.vert">

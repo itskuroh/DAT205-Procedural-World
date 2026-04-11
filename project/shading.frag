@@ -43,6 +43,7 @@ uniform float point_light_intensity_multiplier = 50.0;
 in vec2 texCoord;
 in vec3 viewSpaceNormal;
 in vec3 viewSpacePosition;
+in float height;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Input uniform variables
@@ -53,7 +54,8 @@ uniform vec3 viewSpaceLightPosition;
 ///////////////////////////////////////////////////////////////////////////////
 // Output color
 ///////////////////////////////////////////////////////////////////////////////
-layout(location = 0) out vec4 fragmentColor;
+//layout(location = 0) 
+out vec4 fragmentColor;
 
 
 
@@ -92,6 +94,21 @@ void main()
 
 	vec3 shading = direct_illumination_term + indirect_illumination_term + emission_term;
 
-	fragmentColor = vec4(shading, 1.0);
+	vec3 color = vec3(1.0, 0.0, 1.0); // Bright Magenta (something wrong)
+
+    if (height < 0.0) {
+        color = vec3(0.0, 0.2, 0.5); // Water
+    } else if (height < 2.0) {
+        color = vec3(0.9, 0.8, 0.5); // Sand
+    } else if (height < 6.0) {
+        color = vec3(0.1, 0.5, 0.1); // Grass
+    } else if (height >= 6.0) {
+        color = vec3(1.0, 1.0, 1.0); // Snow
+    }
+
+	vec3 norm = normalize(viewSpaceNormal);
+    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0)); // Directional light
+    float diff = max(dot(norm, lightDir), 0.25);      // Ambient + Diffuse
+	fragmentColor = vec4(color*diff, 1.0);
 	return;
 }

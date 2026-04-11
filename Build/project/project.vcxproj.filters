@@ -4,6 +4,14 @@
     <ClCompile Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\project\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\project\terrain.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\project\terrain.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\project\CMakeLists.txt" />
@@ -29,6 +37,9 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{34E46ED5-FEA1-3F15-B4B8-7144A2B0BF0A}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Shaders">
       <UniqueIdentifier>{75BACB66-EF66-3406-9311-22E3E3A0947B}</UniqueIdentifier>
     </Filter>
