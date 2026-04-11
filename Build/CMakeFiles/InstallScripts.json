@@ -1,0 +1,10 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/Users/Zhiyuan/Documents/DAT205/DAT205Proj/Build/cmake_install.cmake",
+		"C:/Users/Zhiyuan/Documents/DAT205/DAT205Proj/Build/labhelper/cmake_install.cmake",
+		"C:/Users/Zhiyuan/Documents/DAT205/DAT205Proj/Build/labhelper/imgui/cmake_install.cmake",
+		"C:/Users/Zhiyuan/Documents/DAT205/DAT205Proj/Build/project/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

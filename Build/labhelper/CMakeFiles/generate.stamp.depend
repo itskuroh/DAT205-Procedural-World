@@ -1,0 +1,11 @@
+# CMake generation dependency list for this directory.
+C:/Program Files/CMake/share/cmake-4.3/Modules/FindGLEW.cmake
+C:/Program Files/CMake/share/cmake-4.3/Modules/FindOpenGL.cmake
+C:/Program Files/CMake/share/cmake-4.3/Modules/FindPackageHandleStandardArgs.cmake
+C:/Program Files/CMake/share/cmake-4.3/Modules/FindPackageMessage.cmake
+C:/Program Files/CMake/share/cmake-4.3/Modules/SelectLibraryConfigurations.cmake
+C:/Users/Zhiyuan/Documents/DAT205/DAT205Proj/external/sdl2/sdl2-config-version.cmake
+C:/Users/Zhiyuan/Documents/DAT205/DAT205Proj/external/sdl2/sdl2-config.cmake
+C:/Users/Zhiyuan/Documents/DAT205/DAT205Proj/external_src/glm/glm-config-version.cmake
+C:/Users/Zhiyuan/Documents/DAT205/DAT205Proj/external_src/glm/glm-config.cmake
+C:/Users/Zhiyuan/Documents/DAT205/DAT205Proj/labhelper/CMakeLists.txt

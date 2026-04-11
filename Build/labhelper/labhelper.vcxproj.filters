@@ -1,0 +1,60 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\labhelper\labhelper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\labhelper\Model.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\labhelper\fbo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\labhelper\hdr.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\labhelper\imgui_impl_sdl.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\labhelper\imgui_impl_opengl3.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\labhelper\perf.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\labhelper\labhelper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\labhelper\Model.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\labhelper\fbo.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\labhelper\hdr.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\labhelper\imgui_impl_sdl.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\labhelper\imgui_impl_opengl3.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\labhelper\perf.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Zhiyuan\Documents\DAT205\DAT205Proj\labhelper\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{34E46ED5-FEA1-3F15-B4B8-7144A2B0BF0A}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{5C118319-8DF1-301C-9AA0-0B3491D59481}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
