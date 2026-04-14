@@ -65,7 +65,7 @@ float point_light_intensity_multiplier = 10000.0f;
 ///////////////////////////////////////////////////////////////////////////////
 // Camera parameters.
 ///////////////////////////////////////////////////////////////////////////////
-vec3 cameraPosition(-70.0f, 40.0f, 60.0f);
+vec3 cameraPosition(-100.0f, 100.0f, 100.0f);
 vec3 cameraDirection = normalize(vec3(0.0f) - cameraPosition);
 float cameraSpeed = 10.f;
 
@@ -130,7 +130,7 @@ void initialize()
 	//fighterModelMatrix = translate(15.0f * worldUp);
 	//landingPadModelMatrix = mat4(1.0f);
 
-	myTerrain.init(200, 200, 1.0f);
+	myTerrain.init(500, 500, 2.0f);
 
 	///////////////////////////////////////////////////////////////////////
 	// Load environment map
@@ -246,7 +246,7 @@ void display(void)
 	///////////////////////////////////////////////////////////////////////////
 	// setup matrices
 	///////////////////////////////////////////////////////////////////////////
-	mat4 projMatrix = perspective(radians(45.0f), float(windowWidth) / float(windowHeight), 5.0f, 2000.0f);
+	mat4 projMatrix = perspective(radians(45.0f), float(windowWidth) / float(windowHeight), 5.0f, 5000.0f);
 	mat4 viewMatrix = lookAt(cameraPosition, cameraPosition + cameraDirection, worldUp);
 
 	vec4 lightStartPosition = vec4(40.0f, 40.0f, 0.0f, 1.0f);
