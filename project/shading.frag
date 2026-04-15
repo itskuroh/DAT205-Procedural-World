@@ -43,7 +43,11 @@ uniform float point_light_intensity_multiplier = 50.0;
 in vec2 texCoord;
 in vec3 viewSpaceNormal;
 in vec3 viewSpacePosition;
+//layout(binding = 10) uniform sampler2D grassTex;
+//layout(binding = 11) uniform sampler2D sandTex;
+//layout(binding = 12) uniform sampler2D rockTex;
 in float height;
+in vec3 modelSpacePos;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Input uniform variables
@@ -57,7 +61,7 @@ uniform vec3 viewSpaceLightPosition;
 //layout(location = 0) 
 out vec4 fragmentColor;
 
-
+uniform bool isGrass;
 
 vec3 calculateDirectIllumiunation(vec3 wo, vec3 n)
 {
@@ -94,35 +98,44 @@ void main()
 
 	vec3 shading = direct_illumination_term + indirect_illumination_term + emission_term;
 
+	vec2 uv = modelSpacePos.xz * 0.1; // tiles texture across terrain
 	vec3 color = vec3(1.0, 0.0, 1.0); // Bright Magenta (something wrong)
-
-    if (height < 0.0) {
-		float depthFactor = clamp(abs(height) / 35.0, 0.0, 1.0);
-        vec3 shallowWater = vec3(0.0, 0.6, 0.8);
-        vec3 deepWater = vec3(0.0, 0.02, 0.1); // Slightly darker for depth
-		color = mix(shallowWater, deepWater, depthFactor);
-	} else if (height < 1.5) {
-        color = vec3(0.9, 0.8, 0.5); // Beach
-    } else if (height < 25.0) {
-        color = vec3(0.1, 0.4, 0.1); // Forest/Grass
-    } else if (height < 50.0) {
-        color = vec3(0.4, 0.4, 0.45); // Rock
-    } else {
-        color = vec3(1.0, 1.0, 1.0); // Snow caps on the high peaks
-    }
 
 	vec3 norm = normalize(viewSpaceNormal);
     vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0)); // Directional light
 	vec3 viewDir = normalize(-viewSpacePosition); // Position from shading.vert
 
     float diff = max(dot(norm, lightDir), 0.25);      // Ambient + Diffuse
+	if (isGrass) diff = 1.0;
 
 	vec3 reflectDir = reflect(-lightDir, n);	//surface glint
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0); // 32 is shininess
 
-	float ambient = 0.2;
+	float ambient = isGrass ? 0.6 : 0.2;
+
+	if (isGrass) {
+		vec3 green = vec3(0.05, 0.4, 0.05);
+        float tipFactor = clamp(modelSpacePos.y * 0.5, 0.0, 1.0); 
+		color = mix(green, vec3(0.2, 0.6, 0.1), tipFactor);
+		diff = max(diff, 0.3);
+
+    } else if (height < 0.0) {
+        color = vec3(0.0, 0.2, 0.5); // Deep Blue Water
+    } else if (height < 5.0) {
+        color = vec3(0.8, 0.7, 0.5); // Sand/Beach
+    } else if (height < 25.0) {
+        color = vec3(0.2, 0.4, 0.1); // Meadow/Grassland color for terrain
+    } else if (height < 70.0) {
+        color = vec3(0.4, 0.4, 0.4); // Grey Rock
+    } else {
+        color = vec3(0.9, 0.9, 1.0); // Snow
+    }
 
     vec3 finalColor = color * (diff + ambient) + (vec3(1.0) * spec * 0.5);
+
+	if (!isGrass){
+		finalColor += (vec3(1.0) * spec * 0.3);
+		}
 
 	fragmentColor = vec4(finalColor*diff, 1.0);
 

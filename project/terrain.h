@@ -16,4 +16,6 @@ struct Terrain {
 
     void init(int width, int height, float scale);
     void render();
+    float getHeightAt(float xPos, float zPos, float scale);
+    float seedX, seedZ;
 };

@@ -155,6 +155,8 @@ GLuint createAddAttribBuffer(GLuint vertexArrayObject,
                              GLenum type,
                              GLenum bufferUsage = GL_STATIC_DRAW);
 
+GLuint loadTexture(const std::string& filename);
+
 
 /**
 	 * Helper to set uniform variables in shaders, labeled SLOW because they find the location from string each time.

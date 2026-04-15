@@ -22,6 +22,8 @@ using namespace glm;
 #include "hdr.h"
 #include "fbo.h"
 #include "terrain.h"
+#include <vector>
+#include <ctime>
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -59,15 +61,12 @@ vec3 point_light_color = vec3(1.f, 1.f, 1.f);
 
 float point_light_intensity_multiplier = 10000.0f;
 
-
-
-
 ///////////////////////////////////////////////////////////////////////////////
 // Camera parameters.
 ///////////////////////////////////////////////////////////////////////////////
-vec3 cameraPosition(-100.0f, 100.0f, 100.0f);
+vec3 cameraPosition(-250.0f, 250.0f, 450.0f);
 vec3 cameraDirection = normalize(vec3(0.0f) - cameraPosition);
-float cameraSpeed = 10.f;
+float cameraSpeed = 100.f;
 
 vec3 worldUp(0.0f, 1.0f, 0.0f);
 
@@ -82,8 +81,26 @@ mat4 roomModelMatrix;
 //mat4 landingPadModelMatrix;
 //mat4 fighterModelMatrix;
 //mat4 fighterModelMatrix;
+//GLuint grassTex, sandTex, rockTex;
+labhelper::Model* grassModel = nullptr;
 
 Terrain myTerrain;
+
+struct SimpleMesh {
+	GLuint vao = 0;
+	int vertexCount = 0;
+};
+
+SimpleMesh grassMesh;
+std::vector<glm::vec3> grassPositions;
+GLuint grassInstanceBuffer = 0;
+
+std::vector<glm::vec3> grassNormals; // To store the tilt
+GLuint grassNormalBuffer = 0;
+
+void initGrassGeometry();
+void generateGrass();
+void loadShaders(bool is_reload);
 
 void loadShaders(bool is_reload)
 {
@@ -113,7 +130,8 @@ void loadShaders(bool is_reload)
 void initialize()
 {
 	ENSURE_INITIALIZE_ONLY_ONCE();
-
+	srand(static_cast<unsigned int>(time(NULL)));
+	myTerrain.init(500, 500, 1.5f);
 	///////////////////////////////////////////////////////////////////////
 	//		Load Shaders
 	///////////////////////////////////////////////////////////////////////
@@ -130,8 +148,36 @@ void initialize()
 	//fighterModelMatrix = translate(15.0f * worldUp);
 	//landingPadModelMatrix = mat4(1.0f);
 
-	myTerrain.init(500, 500, 2.0f);
+	//grassTex = labhelper::loadTexture("../scenes/Grass1.jpg");
+	//rockTex = labhelper::loadTexture("../scenes/rock.jpg");
+	//sandTex = labhelper::loadTexture("../scenes/sand.jpg");
+	grassModel = labhelper::loadModelFromOBJ("../scenes/grass.obj");
+	if (grassModel == nullptr) {
+		printf("ERROR: grass.obj not found!\n");
+	}
+	else {
+		printf("SUCCESS: Loaded %zu meshes for grass.\n", grassModel->m_meshes.size());
+	}
+	//initGrassGeometry();
+	generateGrass();
 
+	// Attach the instance buffer to the Model's VAO
+	glBindVertexArray(grassModel->m_vaob);
+
+	glBindBuffer(GL_ARRAY_BUFFER, grassInstanceBuffer);
+	glEnableVertexAttribArray(4); // Location 4 in your shading.vert
+	glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+
+	// Crucial: tell OpenGL this is per-instance data
+	glVertexAttribDivisor(4, 1);
+
+	// for normal of grass texture
+	glBindBuffer(GL_ARRAY_BUFFER, grassNormalBuffer);
+	glEnableVertexAttribArray(5);
+	glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+	glVertexAttribDivisor(5, 1);
+
+	glBindVertexArray(0);
 	///////////////////////////////////////////////////////////////////////
 	// Load environment map
 	///////////////////////////////////////////////////////////////////////
@@ -163,6 +209,82 @@ void drawBackground(const mat4& viewMatrix, const mat4& projectionMatrix)
 	labhelper::drawFullScreenQuad();
 }
 
+glm::vec3 getTerrainNormal(float x, float z, float terrainScale) {
+	float delta = 1.0f;
+	float hL = myTerrain.getHeightAt(x - delta, z, terrainScale);
+	float hR = myTerrain.getHeightAt(x + delta, z, terrainScale);
+	float hD = myTerrain.getHeightAt(x, z - delta, terrainScale);
+	float hU = myTerrain.getHeightAt(x, z + delta, terrainScale);
+
+	// This calculates the slope in both directions
+	glm::vec3 normal;
+	normal.x = hL - hR;
+	normal.y = 2.0f * delta;
+	normal.z = hD - hU;
+
+	return glm::normalize(glm::vec3(hR - hL, 2.0f * delta, hU - hD));
+}
+
+void generateGrass() {
+	float terrainScale = 1.5f;
+	float halfSize = (500.0f / 2.0f) * terrainScale; // 375.0f
+
+	for (int i = 0; i < 10000; i++) { // More grass for a 500x500 map
+		float x = labhelper::uniform_randf(-halfSize, halfSize);
+		float z = labhelper::uniform_randf(-halfSize, halfSize);
+
+		// Call our new height function
+		float h = myTerrain.getHeightAt(x, z, terrainScale);
+
+		// Place grass only on the plains (above sand, below rock)
+		if (h > 5.0f && h < 25.0f) {
+			grassPositions.push_back(glm::vec3(x, h, z));
+
+			grassNormals.push_back(getTerrainNormal(x, z, terrainScale));
+		}
+	}
+	
+	if (grassInstanceBuffer == 0) glGenBuffers(1, &grassInstanceBuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, grassInstanceBuffer);
+	glBufferData(GL_ARRAY_BUFFER, grassPositions.size() * sizeof(glm::vec3), grassPositions.data(), GL_STATIC_DRAW);
+
+	if (grassNormalBuffer == 0) glGenBuffers(1, &grassNormalBuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, grassNormalBuffer);
+	glBufferData(GL_ARRAY_BUFFER, grassNormals.size() * sizeof(glm::vec3), grassNormals.data(), GL_STATIC_DRAW);
+
+	printf("Normal Buffer ID: %u\n", grassNormalBuffer); // Should NOT be 0
+	// Unbind to stay clean
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void initGrassGeometry() {
+	// Two vertical quads intersecting in an X-shape
+	float s = 0.5f; // size
+	float h = 1.0f; // height
+	float vertices[] = {
+		// Quad 1
+		-s, 0, 0,  s, h, 0,  -s, h, 0,
+		-s, 0, 0,  s, 0, 0,   s, h, 0,
+		// Quad 2 (rotated 90 degrees)
+		 0, 0, -s,  0, h, s,   0, h, -s,
+		 0, 0, -s,  0, 0, s,   0, h, s
+	};
+
+	glGenVertexArrays(1, &grassMesh.vao);
+	glBindVertexArray(grassMesh.vao);
+
+	GLuint vbo;
+	glGenBuffers(1, &vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+	// Location 0: Position
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+	glEnableVertexAttribArray(0);
+
+	grassMesh.vertexCount = 12;
+	glBindVertexArray(0);
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 /// This function is used to draw the main objects on the scene
@@ -198,6 +320,66 @@ void drawScene(GLuint currentShaderProgram,
 	labhelper::setUniformSlow(currentShaderProgram, "modelViewProjectionMatrix", projectionMatrix * modelViewMatrix);
 	labhelper::setUniformSlow(currentShaderProgram, "modelViewMatrix", modelViewMatrix);
 	labhelper::setUniformSlow(currentShaderProgram, "normalMatrix", normalMatrix);
+
+	//if (grassMesh.vao != 0 && !grassPositions.empty()) {
+	//	glUseProgram(currentShaderProgram);
+
+	//	// 1. Force the uniform BEFORE binding or drawing
+	//	labhelper::setUniformSlow(currentShaderProgram, "isGrass", true);
+	//	glDisable(GL_CULL_FACE);
+
+	//	// 2. BIND THE VAO FIRST
+	//	glBindVertexArray(grassMesh.vao);
+
+	//	// 3. SET UP THE INSTANCE BUFFER while the VAO is bound
+	//	glBindBuffer(GL_ARRAY_BUFFER, grassInstanceBuffer);
+	//	glEnableVertexAttribArray(4);
+	//	glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+	//	glVertexAttribDivisor(4, 1);
+
+	//	// 4. DRAW
+	//	glDrawArraysInstanced(GL_TRIANGLES, 0, grassMesh.vertexCount, (GLsizei)grassPositions.size());
+
+	//	// 5. CLEANUP
+	//	glVertexAttribDivisor(4, 0);
+	//	glDisableVertexAttribArray(4);
+	//	glBindVertexArray(0);
+	//	glEnable(GL_CULL_FACE);
+	//	labhelper::setUniformSlow(currentShaderProgram, "isGrass", false);
+	//}
+
+	if (grassModel != nullptr && !grassPositions.empty()) {
+		glUseProgram(currentShaderProgram);
+		labhelper::setUniformSlow(currentShaderProgram, "isGrass", true);
+		glDisable(GL_CULL_FACE);
+
+		glBindVertexArray(grassModel->m_vaob);
+
+		// We loop through each mesh in the OBJ and draw all instances of it
+		for (const auto& mesh : grassModel->m_meshes) {
+			glDrawArraysInstanced(
+				GL_TRIANGLES,
+				mesh.m_start_index,       // Where this part of the OBJ starts
+				mesh.m_number_of_vertices, // How many vertices in this part
+				(GLsizei)grassPositions.size() // 100,000 instances!
+			);
+		}
+
+		glBindVertexArray(0);
+		glEnable(GL_CULL_FACE);
+		labhelper::setUniformSlow(currentShaderProgram, "isGrass", false);
+	}
+
+	//map terrain
+	//glActiveTexture(GL_TEXTURE10);
+	//glBindTexture(GL_TEXTURE_2D, grassTex);
+
+	//glActiveTexture(GL_TEXTURE11);
+	//glBindTexture(GL_TEXTURE_2D, sandTex);
+
+	//glActiveTexture(GL_TEXTURE12);
+	//glBindTexture(GL_TEXTURE_2D, rockTex);
+	//glActiveTexture(GL_TEXTURE0);
 
 	//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 	myTerrain.render();

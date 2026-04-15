@@ -19,6 +19,9 @@ void Terrain::init(int width, int height, float scale) {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
 
+    seedX = static_cast<float>(rand() % 10000);
+    seedZ = static_cast<float>(rand() % 10000);
+
     // 1. Generate Positions
     float islandRadius = (width / 2.0f) * scale;
     // version 1: massive island in centre of map
@@ -44,23 +47,22 @@ void Terrain::init(int width, int height, float scale) {
             float xPos = (static_cast<float>(x) - width / 2.0f) * scale;
             float zPos = (static_cast<float>(z) - height / 2.0f) * scale;
 
-            float noiseX = x * 0.015f;
-            float noiseZ = z * 0.015f;
+            float freq = 0.012f;
+            float base = noise(glm::vec3((x + seedX) * freq, 0.0f, (z + seedZ) * freq));
 
-            // base noise
-            float n = noise(glm::vec3(noiseX, 0.0f, noiseZ));
+            // increase contrast
+            float mountainWeight = std::pow(base, 4.0f);
 
-            float mountainShape = std::pow(n, 3.0f);
+            // massive mountain peaks
+            float h = mountainWeight * 150.0f;
 
-            // scale
-            float h = mountainShape * 80.0f;
+            // jagged peaks
+            if (base > 0.5f) {
+                float detail = 1.0f - std::abs(noise(glm::vec3(x * 0.1f, 0.0f, z * 0.1f)));
+                h += detail * 15.0f * (base - 0.5f);
+            }
 
-            // add sharp detail
-            float detail = 1.0f - std::abs(noise(glm::vec3(noiseX * 5.0f, 0.0f, noiseZ * 5.0f)));
-            h += detail * 10.0f;
-
-            // sea level
-            float yPos = h - 20.0f;
+            float yPos = h - 20.0f; // Sea level
 
             vertices.push_back({ glm::vec3(xPos, yPos, zPos), glm::vec3(0, 1, 0) });
         }
@@ -121,4 +123,25 @@ void Terrain::init(int width, int height, float scale) {
 void Terrain::render() {
     glBindVertexArray(vao);
     glDrawElements(GL_TRIANGLES, numIndices, GL_UNSIGNED_INT, nullptr);
+}
+
+float Terrain::getHeightAt(float xPos, float zPos, float scale) {
+    float w = 500.0f;
+    float h_map = 500.0f;
+
+    float x = (xPos / scale) + w / 2.0f;
+    float z = (zPos / scale) + h_map / 2.0f;
+
+    float freq = 0.012f;
+    float base = noise(glm::vec3((x + seedX) * freq, 0.0f, (z + seedZ) * freq));
+
+    float mountainWeight = std::pow(base, 4.0f);
+    float h = mountainWeight * 150.0f;
+
+    if (base > 0.5f) {
+        float detail = 1.0f - std::abs(noise(glm::vec3(x * 0.1f, 0.0f, z * 0.1f)));
+        h += detail * 15.0f * (base - 0.5f);
+    }
+
+    return h - 20.0f; // Matches "Sea level" offset
 }
