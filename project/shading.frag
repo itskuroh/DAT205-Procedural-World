@@ -101,49 +101,65 @@ void main()
 	vec2 uv = modelSpacePos.xz * 0.1; // tiles texture across terrain
 	vec3 color = vec3(1.0, 0.0, 1.0); // Bright Magenta (something wrong)
 
-	vec3 norm = normalize(viewSpaceNormal);
-    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0)); // Directional light
-	vec3 viewDir = normalize(-viewSpacePosition); // Position from shading.vert
+    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0)); // Simple directional light
+    vec3 viewDir = normalize(-viewSpacePosition);
 
-    float diff = max(dot(norm, lightDir), 0.25);      // Ambient + Diffuse
-	if (isGrass) diff = 1.0;
-
-	vec3 reflectDir = reflect(-lightDir, n);	//surface glint
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0); // 32 is shininess
-
-	float ambient = isGrass ? 0.6 : 0.2;
+	// Biome Colors
+    vec3 waterColor = vec3(0.0, 0.1, 0.3);
+    vec3 sandColor  = vec3(0.8, 0.7, 0.5);
+    vec3 grassColor = vec3(0.15, 0.35, 0.08);
+    vec3 rockColor  = vec3(0.35, 0.33, 0.30);
+    vec3 snowColor  = vec3(0.95, 0.95, 1.0);
+	vec3 terrainBase;
 
 	if (isGrass) {
-		vec3 green = vec3(0.05, 0.4, 0.05);
-        float tipFactor = clamp(modelSpacePos.y * 0.5, 0.0, 1.0); 
-		color = mix(green, vec3(0.2, 0.6, 0.1), tipFactor);
-		diff = max(diff, 0.3);
+		vec3 darkGreen = vec3(0.02, 0.2, 0.02);
+        vec3 lightGreen = vec3(0.3, 0.6, 0.1);
+        
+        float tipFactor = clamp(modelSpacePos.y * 5.0, 0.0, 1.0); 
+        terrainBase = mix(darkGreen, lightGreen, tipFactor);
 
-    } else if (height < 0.0) {
-        color = vec3(0.0, 0.2, 0.5); // Deep Blue Water
-    } else if (height < 5.0) {
-        color = vec3(0.8, 0.7, 0.5); // Sand/Beach
-    } else if (height < 25.0) {
-        color = vec3(0.2, 0.4, 0.1); // Meadow/Grassland color for terrain
-    } else if (height < 70.0) {
-        color = vec3(0.4, 0.4, 0.4); // Grey Rock
     } else {
-        color = vec3(0.9, 0.9, 1.0); // Snow
-    }
+        float transition = 6.0; // Smoothness of transitions
+        
+        // sand
+        terrainBase = sandColor;
 
-    vec3 finalColor = color * (diff + ambient) + (vec3(1.0) * spec * 0.5);
+        // Transition: Sand -> Grass (around 5.0 height)
+        float grassFactor = smoothstep(2.0, 2.0 + transition, height);
+        terrainBase = mix(terrainBase, grassColor, grassFactor);
 
-	if (!isGrass){
-		finalColor += (vec3(1.0) * spec * 0.3);
-		}
+        // Transition: Grass -> Rock (around 35.0 height)
+        float rockFactor = smoothstep(30.0, 30.0 + transition, height);
+        terrainBase = mix(terrainBase, rockColor, rockFactor);
 
-	fragmentColor = vec4(finalColor*diff, 1.0);
+        // Transition: Rock -> Snow (around 85.0 height)
+        float snowFactor = smoothstep(80.0, 80.0 + transition, height);
+        terrainBase = mix(terrainBase, snowColor, snowFactor);
 
-	// fog of war
-	float dist = length(viewSpacePosition);
-	float fogFactor = clamp((dist - 100.0) / 800.0, 0.0, 1.0); // Start fog at 100 units
+        float slope = 1.0 - n.y; 
+        terrainBase = mix(terrainBase, rockColor, smoothstep(0.4, 0.7, slope));
 
-	vec3 fogColor = vec3(0.5, 0.6, 0.7); // Match this to your background sky/ocean
-	fragmentColor.rgb = mix(fragmentColor.rgb, fogColor, fogFactor);
-	return;
+		if (height < -1.0) {
+            terrainBase = mix(waterColor, sandColor, smoothstep(-5.0, -1.0, height));
+        }
+	}
+
+    float diff = max(dot(n, lightDir), 0.0);
+    float ambient = isGrass ? 0.5 : 0.25; // Grass needs more ambient to look lush
+    
+    // glint
+    vec3 reflectDir = reflect(-lightDir, n);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 16.0);
+    float specIntensity = isGrass ? 0.1 : 0.3; // Rocks are shinier than grass
+
+    vec3 finalColor = terrainBase * (diff + ambient) + (vec3(1.0) * spec * specIntensity);
+
+    // Fog of War
+    float dist = length(viewSpacePosition);
+    // Adjust 100.0 (start) and 800.0 (end) to fit your map size
+    float fogFactor = clamp((dist - 150.0) / 600.0, 0.0, 1.0); 
+    vec3 fogColor = vec3(0.5, 0.6, 0.7); // Light blue/grey sky
+
+    fragmentColor = vec4(mix(finalColor, fogColor, fogFactor), 1.0);
 }

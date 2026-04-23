@@ -151,7 +151,7 @@ void initialize()
 	//grassTex = labhelper::loadTexture("../scenes/Grass1.jpg");
 	//rockTex = labhelper::loadTexture("../scenes/rock.jpg");
 	//sandTex = labhelper::loadTexture("../scenes/sand.jpg");
-	grassModel = labhelper::loadModelFromOBJ("../scenes/grass.obj");
+	grassModel = labhelper::loadModelFromOBJ("../scenes/grass3.obj");
 	if (grassModel == nullptr) {
 		printf("ERROR: grass.obj not found!\n");
 	}
@@ -229,7 +229,7 @@ void generateGrass() {
 	float terrainScale = 1.5f;
 	float halfSize = (500.0f / 2.0f) * terrainScale; // 375.0f
 
-	for (int i = 0; i < 10000; i++) { // More grass for a 500x500 map
+	for (int i = 0; i < 3000; i++) { // More grass for a 500x500 map
 		float x = labhelper::uniform_randf(-halfSize, halfSize);
 		float z = labhelper::uniform_randf(-halfSize, halfSize);
 
@@ -369,6 +369,13 @@ void drawScene(GLuint currentShaderProgram,
 		glEnable(GL_CULL_FACE);
 		labhelper::setUniformSlow(currentShaderProgram, "isGrass", false);
 	}
+
+	//Get the time
+	float currentTime = SDL_GetTicks() / 1000.0f;
+
+	// Find the location and upload it
+	GLuint timeLoc = glGetUniformLocation(shaderProgram, "currentTime");
+	glUniform1f(timeLoc, currentTime);
 
 	//map terrain
 	//glActiveTexture(GL_TEXTURE10);

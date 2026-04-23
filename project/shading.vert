@@ -14,6 +14,7 @@ layout(location = 5) in vec3 terrainNormal;
 uniform mat4 normalMatrix;
 uniform mat4 modelViewMatrix;
 uniform mat4 modelViewProjectionMatrix;
+uniform float currentTime;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Output to fragment shader
@@ -32,7 +33,7 @@ void main()
 	vec3 vNormal = normalIn; // Start with the model's original normal
 
 	if (isGrass) {
-		float scale = 0.05;
+		float scale = 0.5;
 		pos = position * scale;
 
 		float baseOffset = 2.0;
@@ -56,9 +57,16 @@ void main()
 			);
 			
 			pos = rot * pos;
-			vNormal = rot * terrainNormal; // Rotate the normal so lighting matches the tilt!
+			vNormal = rot * terrainNormal; // Rotate the normal so lighting matches the tilt
 		}
 		pos.y += 0.5;
+
+		float windSpeed = 2.0;
+        float windStrength = 0.15;
+        float wave = sin(currentTime * 1.2 + instanceOffset.x) + (sin(currentTime * 3.5) * 0.3);;
+
+		pos.x += wave * pos.y * windStrength;
+        pos.z += wave * pos.y * windStrength * 0.5;
 	}
 
 	// Calculate actual position
@@ -71,7 +79,7 @@ void main()
 	gl_Position = modelViewProjectionMatrix * vec4(worldPos, 1.0);
 	texCoord = texCoordIn;
 
-	// FIX: Use vNormal (which was rotated) instead of the raw normalIn
+	// Use vNormal (which was rotated) instead of the raw normalIn
 	viewSpaceNormal = (normalMatrix * vec4(vNormal, 0.0)).xyz;
 	
 	viewSpacePosition = (modelViewMatrix * vec4(worldPos, 1.0)).xyz;
