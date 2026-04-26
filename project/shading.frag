@@ -48,12 +48,14 @@ in vec3 viewSpacePosition;
 //layout(binding = 12) uniform sampler2D rockTex;
 in float height;
 in vec3 modelSpacePos;
+in vec3 modelNormal;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Input uniform variables
 ///////////////////////////////////////////////////////////////////////////////
 uniform mat4 viewInverse;
 uniform vec3 viewSpaceLightPosition;
+uniform vec3 viewSpaceLightDir;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Output color
@@ -101,7 +103,7 @@ void main()
 	vec2 uv = modelSpacePos.xz * 0.1; // tiles texture across terrain
 	vec3 color = vec3(1.0, 0.0, 1.0); // Bright Magenta (something wrong)
 
-    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0)); // Simple directional light
+    //vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0)); // Simple directional light
     vec3 viewDir = normalize(-viewSpacePosition);
 
 	// Biome Colors
@@ -137,19 +139,20 @@ void main()
         float snowFactor = smoothstep(80.0, 80.0 + transition, height);
         terrainBase = mix(terrainBase, snowColor, snowFactor);
 
-        float slope = 1.0 - n.y; 
-        terrainBase = mix(terrainBase, rockColor, smoothstep(0.4, 0.7, slope));
+        float slope = 1.0 - normalize(modelNormal).y; 
+        float slopeRockFactor = smoothstep(0.75, 0.85, slope);
+        terrainBase = mix(terrainBase, rockColor, slopeRockFactor);
 
 		if (height < -1.0) {
             terrainBase = mix(waterColor, sandColor, smoothstep(-5.0, -1.0, height));
         }
 	}
 
-    float diff = max(dot(n, lightDir), 0.0);
+    float diff = max(dot(n, -viewSpaceLightDir), 0.0);
     float ambient = isGrass ? 0.5 : 0.25; // Grass needs more ambient to look lush
     
     // glint
-    vec3 reflectDir = reflect(-lightDir, n);
+    vec3 reflectDir = reflect(-viewSpaceLightDir, n);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), 16.0);
     float specIntensity = isGrass ? 0.1 : 0.3; // Rocks are shinier than grass
 

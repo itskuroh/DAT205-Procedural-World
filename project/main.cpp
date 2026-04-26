@@ -39,6 +39,10 @@ int windowWidth, windowHeight;
 ivec2 g_prevMouseCoords = { -1, -1 };
 bool g_isMouseDragging = false;
 
+int grassCount = 100;
+const int maxGrassCount = 1000;
+float daySpeed = 0.5f;
+
 ///////////////////////////////////////////////////////////////////////////////
 // Shader programs
 ///////////////////////////////////////////////////////////////////////////////
@@ -296,6 +300,11 @@ void drawScene(GLuint currentShaderProgram,
                const mat4& lightProjectionMatrix)
 {
 	glUseProgram(currentShaderProgram);
+
+	// slider variables
+	labhelper::setUniformSlow(currentShaderProgram, "currentTime", currentTime);
+
+
 	// Light source
 	vec4 viewSpaceLightPosition = viewMatrix * vec4(lightPosition, 1.0f);
 	labhelper::setUniformSlow(currentShaderProgram, "point_light_color", point_light_color);
@@ -321,33 +330,6 @@ void drawScene(GLuint currentShaderProgram,
 	labhelper::setUniformSlow(currentShaderProgram, "modelViewMatrix", modelViewMatrix);
 	labhelper::setUniformSlow(currentShaderProgram, "normalMatrix", normalMatrix);
 
-	//if (grassMesh.vao != 0 && !grassPositions.empty()) {
-	//	glUseProgram(currentShaderProgram);
-
-	//	// 1. Force the uniform BEFORE binding or drawing
-	//	labhelper::setUniformSlow(currentShaderProgram, "isGrass", true);
-	//	glDisable(GL_CULL_FACE);
-
-	//	// 2. BIND THE VAO FIRST
-	//	glBindVertexArray(grassMesh.vao);
-
-	//	// 3. SET UP THE INSTANCE BUFFER while the VAO is bound
-	//	glBindBuffer(GL_ARRAY_BUFFER, grassInstanceBuffer);
-	//	glEnableVertexAttribArray(4);
-	//	glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
-	//	glVertexAttribDivisor(4, 1);
-
-	//	// 4. DRAW
-	//	glDrawArraysInstanced(GL_TRIANGLES, 0, grassMesh.vertexCount, (GLsizei)grassPositions.size());
-
-	//	// 5. CLEANUP
-	//	glVertexAttribDivisor(4, 0);
-	//	glDisableVertexAttribArray(4);
-	//	glBindVertexArray(0);
-	//	glEnable(GL_CULL_FACE);
-	//	labhelper::setUniformSlow(currentShaderProgram, "isGrass", false);
-	//}
-
 	if (grassModel != nullptr && !grassPositions.empty()) {
 		glUseProgram(currentShaderProgram);
 		labhelper::setUniformSlow(currentShaderProgram, "isGrass", true);
@@ -361,7 +343,7 @@ void drawScene(GLuint currentShaderProgram,
 				GL_TRIANGLES,
 				mesh.m_start_index,       // Where this part of the OBJ starts
 				mesh.m_number_of_vertices, // How many vertices in this part
-				(GLsizei)grassPositions.size() // 100,000 instances!
+				(GLsizei)grassCount
 			);
 		}
 
@@ -377,37 +359,7 @@ void drawScene(GLuint currentShaderProgram,
 	GLuint timeLoc = glGetUniformLocation(shaderProgram, "currentTime");
 	glUniform1f(timeLoc, currentTime);
 
-	//map terrain
-	//glActiveTexture(GL_TEXTURE10);
-	//glBindTexture(GL_TEXTURE_2D, grassTex);
-
-	//glActiveTexture(GL_TEXTURE11);
-	//glBindTexture(GL_TEXTURE_2D, sandTex);
-
-	//glActiveTexture(GL_TEXTURE12);
-	//glBindTexture(GL_TEXTURE_2D, rockTex);
-	//glActiveTexture(GL_TEXTURE0);
-
-	//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 	myTerrain.render();
-
-	// landing pad
-	//labhelper::setUniformSlow(currentShaderProgram, "modelViewProjectionMatrix",
-	//                          projectionMatrix * viewMatrix * landingPadModelMatrix);
-	//labhelper::setUniformSlow(currentShaderProgram, "modelViewMatrix", viewMatrix * landingPadModelMatrix);
-	//labhelper::setUniformSlow(currentShaderProgram, "normalMatrix",
-	//                          inverse(transpose(viewMatrix * landingPadModelMatrix)));
-
-	//labhelper::render(landingpadModel);
-
-	// Fighter
-	//labhelper::setUniformSlow(currentShaderProgram, "modelViewProjectionMatrix",
-	//                          projectionMatrix * viewMatrix * fighterModelMatrix);
-	//labhelper::setUniformSlow(currentShaderProgram, "modelViewMatrix", viewMatrix * fighterModelMatrix);
-	//labhelper::setUniformSlow(currentShaderProgram, "normalMatrix",
-	//                          inverse(transpose(viewMatrix * fighterModelMatrix)));
-
-	//labhelper::render(fighterModel);
 }
 
 
@@ -439,7 +391,7 @@ void display(void)
 	mat4 viewMatrix = lookAt(cameraPosition, cameraPosition + cameraDirection, worldUp);
 
 	vec4 lightStartPosition = vec4(40.0f, 40.0f, 0.0f, 1.0f);
-	lightPosition = vec3(rotate(currentTime, worldUp) * lightStartPosition);
+	lightPosition = vec3(rotate(currentTime * daySpeed, worldUp) * lightStartPosition);
 	mat4 lightViewMatrix = lookAt(lightPosition, vec3(0.0f), worldUp);
 	mat4 lightProjMatrix = perspective(radians(45.0f), 1.0f, 25.0f, 100.0f);
 
@@ -569,9 +521,18 @@ void gui()
 {
 	// ----------------- Set variables --------------------------
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate,
-	            ImGui::GetIO().Framerate);
+	ImGui::GetIO().Framerate);
 	// ----------------------------------------------------------
+	ImGui::Separator();
 
+	ImGui::Text("Terrain Settings");
+	ImGui::SliderInt("Grass Density", &grassCount, 0, maxGrassCount);
+	ImGui::Text("Current Count: %d", grassCount);
+
+	ImGui::Text("Day Speed");
+	ImGui::SliderFloat("Day Speed", &daySpeed, 0.0f, 2.0f);
+
+	//ImGui::End();
 
 	////////////////////////////////////////////////////////////////////////////////
 	////////////////////////////////////////////////////////////////////////////////

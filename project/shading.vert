@@ -21,6 +21,7 @@ uniform float currentTime;
 ///////////////////////////////////////////////////////////////////////////////
 out vec2 texCoord;
 out vec3 viewSpaceNormal;
+out vec3 modelNormal;
 out vec3 viewSpacePosition;
 out vec3 modelSpacePos;
 out float height;
@@ -31,6 +32,7 @@ void main()
 {
 	vec3 pos = position;
 	vec3 vNormal = normalIn; // Start with the model's original normal
+	modelNormal = normalIn;
 
 	if (isGrass) {
 		float scale = 0.5;
