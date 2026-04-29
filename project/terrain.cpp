@@ -50,19 +50,25 @@ void Terrain::init(int width, int height, float scale) {
             float freq = 0.012f;
             float base = noise(glm::vec3((x + seedX) * freq, 0.0f, (z + seedZ) * freq));
 
-            // increase contrast
-            float mountainWeight = std::pow(base, 4.0f);
+            float centered = (base * 2.0f) - 1.0f;
 
-            // massive mountain peaks
-            float h = mountainWeight * 150.0f;
+            float h = 0.0f;
 
-            // jagged peaks
-            if (base > 0.5f) {
+            if (centered > 0.0f) {
+                h = std::pow(centered, 3.0f) * 150.0f;
+
+                // add jagged detail only to mountains
                 float detail = 1.0f - std::abs(noise(glm::vec3(x * 0.1f, 0.0f, z * 0.1f)));
-                h += detail * 15.0f * (base - 0.5f);
+                h += detail * 20.0f * centered;
+            }
+            else {
+                //ocean
+                float depth = std::pow(std::abs(centered), 0.7f);
+                h = -depth * 180.0f;
             }
 
-            float yPos = h - 20.0f; // Sea level
+            // 3. Final Y Position (No need to subtract 20 anymore, h = 0 is now natural sea level)
+            float yPos = h;
 
             vertices.push_back({ glm::vec3(xPos, yPos, zPos), glm::vec3(0, 1, 0) });
         }
@@ -126,8 +132,8 @@ void Terrain::render() {
 }
 
 float Terrain::getHeightAt(float xPos, float zPos, float scale) {
-    float w = 500.0f;
-    float h_map = 500.0f;
+    float w = 1000.0f;
+    float h_map = 1000.0f;
 
     float x = (xPos / scale) + w / 2.0f;
     float z = (zPos / scale) + h_map / 2.0f;
@@ -135,13 +141,22 @@ float Terrain::getHeightAt(float xPos, float zPos, float scale) {
     float freq = 0.012f;
     float base = noise(glm::vec3((x + seedX) * freq, 0.0f, (z + seedZ) * freq));
 
-    float mountainWeight = std::pow(base, 4.0f);
-    float h = mountainWeight * 150.0f;
+    float centered = (base * 2.0f) - 1.0f;
+    float h = 0.0f;
 
-    if (base > 0.5f) {
+    if (centered > 0.0f) {
+        // Mountains
+        h = std::pow(centered, 3.0f) * 150.0f;
+
+        // Add detail
         float detail = 1.0f - std::abs(noise(glm::vec3(x * 0.1f, 0.0f, z * 0.1f)));
-        h += detail * 15.0f * (base - 0.5f);
+        h += detail * 20.0f * centered;
+    }
+    else {
+        // Ocean
+        float depth = std::pow(std::abs(centered), 0.7f);
+        h = -depth * 180.0f;
     }
 
-    return h - 20.0f; // Matches "Sea level" offset
+    return h;
 }

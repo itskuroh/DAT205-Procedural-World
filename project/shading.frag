@@ -127,26 +127,30 @@ void main()
         // sand
         terrainBase = sandColor;
 
-        // Transition: Sand -> Grass (around 5.0 height)
-        float grassFactor = smoothstep(2.0, 2.0 + transition, height);
+        // Transition: Sand -> Grass
+        float grassFactor = smoothstep(2.0, 10.0 + transition, height);
         terrainBase = mix(terrainBase, grassColor, grassFactor);
 
-        // Transition: Grass -> Rock (around 35.0 height)
+        // Transition: Grass -> Rock
         float rockFactor = smoothstep(30.0, 30.0 + transition, height);
         terrainBase = mix(terrainBase, rockColor, rockFactor);
 
-        // Transition: Rock -> Snow (around 85.0 height)
+        // Transition: Rock -> Snow
         float snowFactor = smoothstep(80.0, 80.0 + transition, height);
         terrainBase = mix(terrainBase, snowColor, snowFactor);
 
         float slope = 1.0 - normalize(modelNormal).y; 
         float slopeRockFactor = smoothstep(0.75, 0.85, slope);
         terrainBase = mix(terrainBase, rockColor, slopeRockFactor);
-
-		if (height < -1.0) {
-            terrainBase = mix(waterColor, sandColor, smoothstep(-5.0, -1.0, height));
-        }
 	}
+
+    if (height < 0.0) {
+    // as height goes lower than 0, darken the color
+    float depth = clamp(abs(height) / 150.0, 0.0, 1.0);
+    
+    vec3 abyssColor = vec3(0.01, 0.02, 0.1); 
+    terrainBase = mix(terrainBase, abyssColor, depth);
+}
 
     float diff = max(dot(n, -viewSpaceLightDir), 0.0);
     float ambient = isGrass ? 0.5 : 0.25; // Grass needs more ambient to look lush

@@ -34,6 +34,8 @@ float currentTime = 0.0f;
 float previousTime = 0.0f;
 float deltaTime = 0.0f;
 int windowWidth, windowHeight;
+float terrainSize = 1000.0f;		//change as needed
+int waterVertexCount;
 
 // Mouse input
 ivec2 g_prevMouseCoords = { -1, -1 };
@@ -56,6 +58,11 @@ GLuint backgroundProgram;
 float environment_multiplier = 1.5f;
 GLuint environmentMap;
 const std::string envmap_base_name = "001";
+
+// water
+GLuint waterVAO, waterVBO;
+float waterHeight = -10.0f; // slider control
+GLuint waterShaderProgram;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Light source
@@ -102,7 +109,6 @@ GLuint grassInstanceBuffer = 0;
 std::vector<glm::vec3> grassNormals; // To store the tilt
 GLuint grassNormalBuffer = 0;
 
-void initGrassGeometry();
 void generateGrass();
 void loadShaders(bool is_reload);
 
@@ -127,6 +133,61 @@ void loadShaders(bool is_reload)
 	}
 }
 
+void initWater() {
+	std::vector<vec3> vertices;
+	std::vector<vec2> texCoords;
+	std::vector<uint32_t> indices;
+
+	int res = 200; // Resolution: 200x200 grid
+	float size = 2000.0f;
+
+	for (int z = 0; z <= res; z++) {
+		for (int x = 0; x <= res; x++) {
+			// Position
+			float xPos = ((float)x / res - 0.5f) * size;
+			float zPos = ((float)z / res - 0.5f) * size;
+			vertices.push_back(vec3(xPos, 0.0f, zPos));
+
+			// TexCoord (UVs) - Tile them so waves repeat
+			texCoords.push_back(vec2((float)x / res * 50.0f, (float)z / res * 50.0f));
+		}
+	}
+
+	for (int z = 0; z < res; z++) {
+		for (int x = 0; x < res; x++) {
+			int i0 = z * (res + 1) + x;
+			int i1 = i0 + 1;
+			int i2 = (z + 1) * (res + 1) + x;
+			int i3 = i2 + 1;
+			indices.push_back(i0); indices.push_back(i2); indices.push_back(i1);
+			indices.push_back(i1); indices.push_back(i2); indices.push_back(i3);
+		}
+	}
+
+	waterVertexCount = (int)indices.size();
+
+	glGenVertexArrays(1, &waterVAO);
+	glBindVertexArray(waterVAO);
+
+	GLuint vboPos, vboTex, ibo;
+	glGenBuffers(1, &vboPos);
+	glBindBuffer(GL_ARRAY_BUFFER, vboPos);
+	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vec3), vertices.data(), GL_STATIC_DRAW);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(0);
+
+	glGenBuffers(1, &vboTex);
+	glBindBuffer(GL_ARRAY_BUFFER, vboTex);
+	glBufferData(GL_ARRAY_BUFFER, texCoords.size() * sizeof(vec2), texCoords.data(), GL_STATIC_DRAW);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(1);
+
+	glGenBuffers(1, &ibo);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(uint32_t), indices.data(), GL_STATIC_DRAW);
+
+	glBindVertexArray(0);
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 /// This function is called once at the start of the program and never again
@@ -135,7 +196,7 @@ void initialize()
 {
 	ENSURE_INITIALIZE_ONLY_ONCE();
 	srand(static_cast<unsigned int>(time(NULL)));
-	myTerrain.init(500, 500, 1.5f);
+	myTerrain.init(terrainSize, terrainSize, 1.5f);
 	///////////////////////////////////////////////////////////////////////
 	//		Load Shaders
 	///////////////////////////////////////////////////////////////////////
@@ -144,17 +205,6 @@ void initialize()
 	///////////////////////////////////////////////////////////////////////
 	// Load models and set up model matrices
 	///////////////////////////////////////////////////////////////////////
-	//fighterModel = labhelper::loadModelFromOBJ("../scenes/NewShip.obj");
-	//landingpadModel = labhelper::loadModelFromOBJ("../scenes/landingpad.obj");
-	//sphereModel = labhelper::loadModelFromOBJ("../scenes/sphere.obj");
-
-	//roomModelMatrix = mat4(1.0f);
-	//fighterModelMatrix = translate(15.0f * worldUp);
-	//landingPadModelMatrix = mat4(1.0f);
-
-	//grassTex = labhelper::loadTexture("../scenes/Grass1.jpg");
-	//rockTex = labhelper::loadTexture("../scenes/rock.jpg");
-	//sandTex = labhelper::loadTexture("../scenes/sand.jpg");
 	grassModel = labhelper::loadModelFromOBJ("../scenes/grass3.obj");
 	if (grassModel == nullptr) {
 		printf("ERROR: grass.obj not found!\n");
@@ -162,7 +212,6 @@ void initialize()
 	else {
 		printf("SUCCESS: Loaded %zu meshes for grass.\n", grassModel->m_meshes.size());
 	}
-	//initGrassGeometry();
 	generateGrass();
 
 	// Attach the instance buffer to the Model's VAO
@@ -186,7 +235,8 @@ void initialize()
 	// Load environment map
 	///////////////////////////////////////////////////////////////////////
 	environmentMap = labhelper::loadHdrTexture("../scenes/envmaps/" + envmap_base_name + ".hdr");
-
+	waterShaderProgram = labhelper::loadShaderProgram("../project/water.vert", "../project/water.frag");
+	initWater();
 
 	glEnable(GL_DEPTH_TEST); // enable Z-buffering
 	glEnable(GL_CULL_FACE);  // enables backface culling
@@ -202,7 +252,6 @@ void debugDrawLight(const glm::mat4& viewMatrix,
 	//                          projectionMatrix * viewMatrix * modelMatrix);
 	//labhelper::render(sphereModel);
 }
-
 
 void drawBackground(const mat4& viewMatrix, const mat4& projectionMatrix)
 {
@@ -231,9 +280,9 @@ glm::vec3 getTerrainNormal(float x, float z, float terrainScale) {
 
 void generateGrass() {
 	float terrainScale = 1.5f;
-	float halfSize = (500.0f / 2.0f) * terrainScale; // 375.0f
+	float halfSize = (terrainSize / 2.0f) * terrainScale;
 
-	for (int i = 0; i < 3000; i++) { // More grass for a 500x500 map
+	for (int i = 0; i < 3000; i++) {
 		float x = labhelper::uniform_randf(-halfSize, halfSize);
 		float z = labhelper::uniform_randf(-halfSize, halfSize);
 
@@ -259,35 +308,6 @@ void generateGrass() {
 	printf("Normal Buffer ID: %u\n", grassNormalBuffer); // Should NOT be 0
 	// Unbind to stay clean
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
-}
-
-void initGrassGeometry() {
-	// Two vertical quads intersecting in an X-shape
-	float s = 0.5f; // size
-	float h = 1.0f; // height
-	float vertices[] = {
-		// Quad 1
-		-s, 0, 0,  s, h, 0,  -s, h, 0,
-		-s, 0, 0,  s, 0, 0,   s, h, 0,
-		// Quad 2 (rotated 90 degrees)
-		 0, 0, -s,  0, h, s,   0, h, -s,
-		 0, 0, -s,  0, 0, s,   0, h, s
-	};
-
-	glGenVertexArrays(1, &grassMesh.vao);
-	glBindVertexArray(grassMesh.vao);
-
-	GLuint vbo;
-	glGenBuffers(1, &vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-	// Location 0: Position
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-	glEnableVertexAttribArray(0);
-
-	grassMesh.vertexCount = 12;
-	glBindVertexArray(0);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -330,6 +350,31 @@ void drawScene(GLuint currentShaderProgram,
 	labhelper::setUniformSlow(currentShaderProgram, "modelViewMatrix", modelViewMatrix);
 	labhelper::setUniformSlow(currentShaderProgram, "normalMatrix", normalMatrix);
 
+	myTerrain.render();
+
+	//draw water
+	glUseProgram(waterShaderProgram);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDisable(GL_CULL_FACE);
+
+	// Set the water's position based on the slider 'waterHeight'
+	mat4 waterModelMatrix = translate(mat4(1.0f), vec3(0, waterHeight, 0));
+	mat4 waterMVP = projectionMatrix * viewMatrix * waterModelMatrix;
+
+	labhelper::setUniformSlow(waterShaderProgram, "modelViewProjectionMatrix", waterMVP);
+	labhelper::setUniformSlow(waterShaderProgram, "currentTime", currentTime);
+	labhelper::setUniformSlow(waterShaderProgram, "waterColor", vec3(0.1f, 0.4f, 0.6f));
+	labhelper::setUniformSlow(waterShaderProgram, "cameraPosition", cameraPosition);
+
+	glBindVertexArray(waterVAO);
+	glDrawElements(GL_TRIANGLES, waterVertexCount, GL_UNSIGNED_INT, 0);
+	glBindVertexArray(0);
+
+	glDisable(GL_BLEND);
+	glEnable(GL_CULL_FACE);
+
+	//draw grass
 	if (grassModel != nullptr && !grassPositions.empty()) {
 		glUseProgram(currentShaderProgram);
 		labhelper::setUniformSlow(currentShaderProgram, "isGrass", true);
@@ -352,14 +397,12 @@ void drawScene(GLuint currentShaderProgram,
 		labhelper::setUniformSlow(currentShaderProgram, "isGrass", false);
 	}
 
-	//Get the time
-	float currentTime = SDL_GetTicks() / 1000.0f;
+	////Get the time
+	//float currentTime = SDL_GetTicks() / 1000.0f;
 
-	// Find the location and upload it
-	GLuint timeLoc = glGetUniformLocation(shaderProgram, "currentTime");
-	glUniform1f(timeLoc, currentTime);
-
-	myTerrain.render();
+	//// Find the location and upload it
+	//GLuint timeLoc = glGetUniformLocation(shaderProgram, "currentTime");
+	//glUniform1f(timeLoc, currentTime);
 }
 
 
@@ -529,8 +572,13 @@ void gui()
 	ImGui::SliderInt("Grass Density", &grassCount, 0, maxGrassCount);
 	ImGui::Text("Current Count: %d", grassCount);
 
+	ImGui::Separator();
 	ImGui::Text("Day Speed");
 	ImGui::SliderFloat("Day Speed", &daySpeed, 0.0f, 2.0f);
+
+	ImGui::Separator();
+	ImGui::Text("Water Control");
+	ImGui::SliderFloat("Sea Level", &waterHeight, -20.0f, 20.0f);
 
 	//ImGui::End();
 
