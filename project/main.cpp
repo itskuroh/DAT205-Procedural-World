@@ -77,7 +77,7 @@ float point_light_intensity_multiplier = 10000.0f;
 ///////////////////////////////////////////////////////////////////////////////
 vec3 cameraPosition(-250.0f, 250.0f, 450.0f);
 vec3 cameraDirection = normalize(vec3(0.0f) - cameraPosition);
-float cameraSpeed = 100.f;
+float cameraSpeed = 300.f;
 
 vec3 worldUp(0.0f, 1.0f, 0.0f);
 
@@ -259,6 +259,7 @@ void drawBackground(const mat4& viewMatrix, const mat4& projectionMatrix)
 	labhelper::setUniformSlow(backgroundProgram, "environment_multiplier", environment_multiplier);
 	labhelper::setUniformSlow(backgroundProgram, "inv_PV", inverse(projectionMatrix * viewMatrix));
 	labhelper::setUniformSlow(backgroundProgram, "camera_pos", cameraPosition);
+	labhelper::setUniformSlow(backgroundProgram, "lightPosition", normalize(lightPosition));
 	labhelper::drawFullScreenQuad();
 }
 
@@ -433,8 +434,11 @@ void display(void)
 	mat4 projMatrix = perspective(radians(45.0f), float(windowWidth) / float(windowHeight), 5.0f, 5000.0f);
 	mat4 viewMatrix = lookAt(cameraPosition, cameraPosition + cameraDirection, worldUp);
 
-	vec4 lightStartPosition = vec4(40.0f, 40.0f, 0.0f, 1.0f);
-	lightPosition = vec3(rotate(currentTime * daySpeed, worldUp) * lightStartPosition);
+	float radius = 1200.0f;
+	float dayAngle = currentTime * daySpeed * 0.1f;
+	vec3 sunDir = vec3(0.0f, sin(dayAngle), cos(dayAngle));
+	lightPosition = vec3(0.0f, sin(dayAngle) * radius, cos(dayAngle) * radius);
+
 	mat4 lightViewMatrix = lookAt(lightPosition, vec3(0.0f), worldUp);
 	mat4 lightProjMatrix = perspective(radians(45.0f), 1.0f, 25.0f, 100.0f);
 
@@ -455,8 +459,10 @@ void display(void)
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	{
-		labhelper::perf::Scope s( "Background" );
+		labhelper::perf::Scope s("Background");
+		glDisable(GL_DEPTH_TEST);
 		drawBackground(viewMatrix, projMatrix);
+		glEnable(GL_DEPTH_TEST);
 	}
 	{
 		labhelper::perf::Scope s( "Scene" );
@@ -574,7 +580,7 @@ void gui()
 
 	ImGui::Separator();
 	ImGui::Text("Day Speed");
-	ImGui::SliderFloat("Day Speed", &daySpeed, 0.0f, 2.0f);
+	ImGui::SliderFloat("Day Speed", &daySpeed, 0.0f, 10.0f);
 
 	ImGui::Separator();
 	ImGui::Text("Water Control");
@@ -623,10 +629,6 @@ int main(int argc, char* argv[])
 		// Swap front and back buffer. This frame will now been displayed.
 		SDL_GL_SwapWindow(g_window);
 	}
-	// Free Models
-	//labhelper::freeModel(fighterModel);
-	//labhelper::freeModel(landingpadModel);
-	//labhelper::freeModel(sphereModel);
 
 	// Shut down everything. This includes the window and all other subsystems.
 	labhelper::shutDown(g_window);

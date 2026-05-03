@@ -150,23 +150,47 @@ void main()
     
     vec3 abyssColor = vec3(0.01, 0.02, 0.1); 
     terrainBase = mix(terrainBase, abyssColor, depth);
-}
+    }
 
-    float diff = max(dot(n, -viewSpaceLightDir), 0.0);
-    float ambient = isGrass ? 0.5 : 0.25; // Grass needs more ambient to look lush
+    // day/night cycle
+    float sunLevel = viewSpaceLightPosition.y;
+    // fades out when sun at altitude 50 to -10
+    float directMask = smoothstep(-10.0, 50.0, sunLevel);
+    float ambientMask = smoothstep(-300.0, 100.0, sunLevel);
+
+    // sunset
+    vec3 sunColor = vec3(1.0, 0.9, 0.8);
+    vec3 sunsetColor = vec3(1.0, 0.5, 0.3);
+    float sunsetFactor = clamp(1.0 - abs(viewSpaceLightPosition.y / 1000.0), 0.0, 1.0);
+    vec3 currentLightColor = mix(sunColor, sunsetColor, pow(sunsetFactor, 2.0));
+
+    // Diffuse
+    float diff = max(dot(n, -viewSpaceLightDir), 0.0) * directMask;
     
-    // glint
-    vec3 reflectDir = reflect(-viewSpaceLightDir, n);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 16.0);
-    float specIntensity = isGrass ? 0.1 : 0.3; // Rocks are shinier than grass
+    // Ambient: Darker at night, lush during day
+    float nightAmbient = 0.1;   //higher = brighter at night
+    float dayAmbient = isGrass ? 0.5 : 0.25;
+    float ambient = mix(nightAmbient, dayAmbient, ambientMask);
+    
+    float ambientFactor = smoothstep(-400.0, 100.0, viewSpaceLightPosition.y);
+    float currentAmbient = mix(nightAmbient, dayAmbient, ambientFactor);
 
-    vec3 finalColor = terrainBase * (diff + ambient) + (vec3(1.0) * spec * specIntensity);
+    // Night should be slightly blue/cool, Day should be neutral/warm
+    vec3 nightTint = vec3(0.05, 0.07, 0.15);
+    vec3 dayLightColor = mix(vec3(1.0, 0.5, 0.2), vec3(1.0, 0.9, 0.8), ambientFactor);
 
-    // Fog of War
+    // Combine
+    vec3 ambientTerm = terrainBase * currentAmbient + nightTint * (1.0 - ambientFactor);
+    
+    vec3 finalColor = (terrainBase * dayLightColor * diff) + ambientTerm;
+
+    // fog
     float dist = length(viewSpacePosition);
-    // Adjust 100.0 (start) and 800.0 (end) to fit your map size
-    float fogFactor = clamp((dist - 150.0) / 600.0, 0.0, 1.0); 
-    vec3 fogColor = vec3(0.5, 0.6, 0.7); // Light blue/grey sky
+    float fogFactor = clamp((dist - 300.0) / 800.0, 0.0, 1.0); 
+    
+    vec3 dayFog = vec3(0.5, 0.6, 0.7);
+    vec3 nightFog = vec3(0.01, 0.02, 0.05);
+    vec3 currentFog = mix(nightFog, dayFog, ambientMask);
 
-    fragmentColor = vec4(mix(finalColor, fogColor, fogFactor), 1.0);
+    fragmentColor = vec4(mix(finalColor, currentFog, fogFactor), 1.0);
 }
