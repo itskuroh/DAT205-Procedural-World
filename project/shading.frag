@@ -49,6 +49,7 @@ in vec3 viewSpacePosition;
 in float height;
 in vec3 modelSpacePos;
 in vec3 modelNormal;
+in vec3 worldSpacePos;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Input uniform variables
@@ -56,6 +57,7 @@ in vec3 modelNormal;
 uniform mat4 viewInverse;
 uniform vec3 viewSpaceLightPosition;
 uniform vec3 viewSpaceLightDir;
+uniform vec3 lightPosition;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Output color
@@ -64,6 +66,24 @@ uniform vec3 viewSpaceLightDir;
 out vec4 fragmentColor;
 
 uniform bool isGrass;
+uniform sampler2DShadow shadowMap;
+in vec4 vFragPosLightSpace;
+
+float calculateShadow(vec3 n, vec3 worldLightDir) {
+    vec3 projCoords = vFragPosLightSpace.xyz / vFragPosLightSpace.w;
+    
+    // transform from [-1, 1] to [0, 1] range
+    projCoords = projCoords * 0.5 + 0.5;
+    
+    if(projCoords.z > 1.0 || projCoords.x > 1.0 || projCoords.x < 0.0 || projCoords.y > 1.0 || projCoords.y < 0.0) {
+        return 0.0; 
+    }
+    // returns 1.0 if not in shadow, 0.0 if in shadow
+    float bias = max(0.005 * (1.0 - dot(n, worldLightDir)), 0.0005);
+    projCoords.z -= bias;
+    
+    return 1.0 - texture(shadowMap, projCoords);
+}
 
 vec3 calculateDirectIllumiunation(vec3 wo, vec3 n)
 {
@@ -81,7 +101,8 @@ void main()
 	float attenuation = 1.0;
 
 	vec3 wo = -normalize(viewSpacePosition);
-	vec3 n = normalize(viewSpaceNormal);
+	//vec3 n = normalize(viewSpaceNormal);
+    vec3 n = normalize(mat3(viewInverse) * viewSpaceNormal);
 
 	// Direct illumination
 	vec3 direct_illumination_term = visibility * calculateDirectIllumiunation(wo, n);
@@ -165,7 +186,10 @@ void main()
     vec3 currentLightColor = mix(sunColor, sunsetColor, pow(sunsetFactor, 2.0));
 
     // Diffuse
-    float diff = max(dot(n, -viewSpaceLightDir), 0.0) * directMask;
+    //float diff = max(dot(n, -viewSpaceLightDir), 0.0) * directMask;
+    vec3 worldLightDir = normalize(lightPosition - worldSpacePos);
+    float diff = max(dot(n, worldLightDir), 0.0) * directMask;
+    float shadow = calculateShadow(n, worldLightDir);
     
     // Ambient: Darker at night, lush during day
     float nightAmbient = 0.1;   //higher = brighter at night
@@ -180,9 +204,11 @@ void main()
     vec3 dayLightColor = mix(vec3(1.0, 0.5, 0.2), vec3(1.0, 0.9, 0.8), ambientFactor);
 
     // Combine
+    vec3 diffuseTerm = (terrainBase * dayLightColor * diff) * (1.0 - shadow);
     vec3 ambientTerm = terrainBase * currentAmbient + nightTint * (1.0 - ambientFactor);
     
-    vec3 finalColor = (terrainBase * dayLightColor * diff) + ambientTerm;
+    //vec3 finalColor = (terrainBase * dayLightColor * diff) + ambientTerm;
+    vec3 finalColor = diffuseTerm + ambientTerm;
 
     // fog
     float dist = length(viewSpacePosition);

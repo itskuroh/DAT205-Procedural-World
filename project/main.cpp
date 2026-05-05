@@ -52,6 +52,10 @@ GLuint shaderProgram;       // Shader for rendering the final image
 GLuint simpleShaderProgram; // Shader used to draw the shadow map
 GLuint backgroundProgram;
 
+GLuint shadowMapFBO;
+GLuint shadowMapFBODepth;
+const int shadowMapSize = 2048; // Resolution of shadow map
+
 ///////////////////////////////////////////////////////////////////////////////
 // Environment
 ///////////////////////////////////////////////////////////////////////////////
@@ -84,15 +88,8 @@ vec3 worldUp(0.0f, 1.0f, 0.0f);
 ///////////////////////////////////////////////////////////////////////////////
 // Models
 ///////////////////////////////////////////////////////////////////////////////
-//labhelper::Model* fighterModel = nullptr;
-//labhelper::Model* landingpadModel = nullptr;
-//labhelper::Model* sphereModel = nullptr;
 
 mat4 roomModelMatrix;
-//mat4 landingPadModelMatrix;
-//mat4 fighterModelMatrix;
-//mat4 fighterModelMatrix;
-//GLuint grassTex, sandTex, rockTex;
 labhelper::Model* grassModel = nullptr;
 
 Terrain myTerrain;
@@ -148,7 +145,7 @@ void initWater() {
 			float zPos = ((float)z / res - 0.5f) * size;
 			vertices.push_back(vec3(xPos, 0.0f, zPos));
 
-			// TexCoord (UVs) - Tile them so waves repeat
+			// repeating waves
 			texCoords.push_back(vec2((float)x / res * 50.0f, (float)z / res * 50.0f));
 		}
 	}
@@ -187,6 +184,34 @@ void initWater() {
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(uint32_t), indices.data(), GL_STATIC_DRAW);
 
 	glBindVertexArray(0);
+}
+
+//shadow
+void initShadowMap() {
+	glGenFramebuffers(1, &shadowMapFBO);
+	glGenTextures(1, &shadowMapFBODepth);
+	glBindTexture(GL_TEXTURE_2D, shadowMapFBODepth);
+
+	// Depth texture setup
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, shadowMapSize, shadowMapSize, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	// Hardware shadow comparison (important for sampler2DShadow)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+
+	// Clamp to border to prevent "shadow stretching" outside the light frustum
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowMapFBODepth, 0);
+	glDrawBuffer(GL_NONE);
+	glReadBuffer(GL_NONE);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -237,6 +262,8 @@ void initialize()
 	environmentMap = labhelper::loadHdrTexture("../scenes/envmaps/" + envmap_base_name + ".hdr");
 	waterShaderProgram = labhelper::loadShaderProgram("../project/water.vert", "../project/water.frag");
 	initWater();
+
+	initShadowMap();
 
 	glEnable(GL_DEPTH_TEST); // enable Z-buffering
 	glEnable(GL_CULL_FACE);  // enables backface culling
@@ -318,7 +345,8 @@ void drawScene(GLuint currentShaderProgram,
                const mat4& viewMatrix,
                const mat4& projectionMatrix,
                const mat4& lightViewMatrix,
-               const mat4& lightProjectionMatrix)
+               const mat4& lightProjectionMatrix,
+			   const vec3& vsLightDir)
 {
 	glUseProgram(currentShaderProgram);
 
@@ -327,14 +355,15 @@ void drawScene(GLuint currentShaderProgram,
 
 
 	// Light source
-	vec4 viewSpaceLightPosition = viewMatrix * vec4(lightPosition, 1.0f);
-	labhelper::setUniformSlow(currentShaderProgram, "point_light_color", point_light_color);
-	labhelper::setUniformSlow(currentShaderProgram, "point_light_intensity_multiplier",
-	                          point_light_intensity_multiplier);
-	labhelper::setUniformSlow(currentShaderProgram, "viewSpaceLightPosition", vec3(viewSpaceLightPosition));
-	labhelper::setUniformSlow(currentShaderProgram, "viewSpaceLightDir",
-	                          normalize(vec3(viewMatrix * vec4(-lightPosition, 0.0f))));
-
+	if (currentShaderProgram == shaderProgram) {
+		vec4 viewSpaceLightPosition = viewMatrix * vec4(lightPosition, 1.0f);
+		labhelper::setUniformSlow(currentShaderProgram, "point_light_color", point_light_color);
+		labhelper::setUniformSlow(currentShaderProgram, "point_light_intensity_multiplier",
+			point_light_intensity_multiplier);
+		labhelper::setUniformSlow(currentShaderProgram, "viewSpaceLightPosition", vec3(viewSpaceLightPosition));
+		labhelper::setUniformSlow(currentShaderProgram, "viewSpaceLightDir", vsLightDir);
+		labhelper::setUniformSlow(currentShaderProgram, "lightPosition", lightPosition);
+	}
 
 	// Environment
 	labhelper::setUniformSlow(currentShaderProgram, "environment_multiplier", environment_multiplier);
@@ -354,26 +383,28 @@ void drawScene(GLuint currentShaderProgram,
 	myTerrain.render();
 
 	//draw water
-	glUseProgram(waterShaderProgram);
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glDisable(GL_CULL_FACE);
+	if (currentShaderProgram == shaderProgram) {
+		glUseProgram(waterShaderProgram);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glDisable(GL_CULL_FACE);
 
-	// Set the water's position based on the slider 'waterHeight'
-	mat4 waterModelMatrix = translate(mat4(1.0f), vec3(0, waterHeight, 0));
-	mat4 waterMVP = projectionMatrix * viewMatrix * waterModelMatrix;
+		// Set the water's position based on the slider 'waterHeight'
+		mat4 waterModelMatrix = translate(mat4(1.0f), vec3(0, waterHeight, 0));
+		mat4 waterMVP = projectionMatrix * viewMatrix * waterModelMatrix;
 
-	labhelper::setUniformSlow(waterShaderProgram, "modelViewProjectionMatrix", waterMVP);
-	labhelper::setUniformSlow(waterShaderProgram, "currentTime", currentTime);
-	labhelper::setUniformSlow(waterShaderProgram, "waterColor", vec3(0.1f, 0.4f, 0.6f));
-	labhelper::setUniformSlow(waterShaderProgram, "cameraPosition", cameraPosition);
+		labhelper::setUniformSlow(waterShaderProgram, "modelViewProjectionMatrix", waterMVP);
+		labhelper::setUniformSlow(waterShaderProgram, "currentTime", currentTime);
+		labhelper::setUniformSlow(waterShaderProgram, "waterColor", vec3(0.1f, 0.4f, 0.6f));
+		labhelper::setUniformSlow(waterShaderProgram, "cameraPosition", cameraPosition);
 
-	glBindVertexArray(waterVAO);
-	glDrawElements(GL_TRIANGLES, waterVertexCount, GL_UNSIGNED_INT, 0);
-	glBindVertexArray(0);
+		glBindVertexArray(waterVAO);
+		glDrawElements(GL_TRIANGLES, waterVertexCount, GL_UNSIGNED_INT, 0);
+		glBindVertexArray(0);
 
-	glDisable(GL_BLEND);
-	glEnable(GL_CULL_FACE);
+		glDisable(GL_BLEND);
+		glEnable(GL_CULL_FACE);
+	}
 
 	//draw grass
 	if (grassModel != nullptr && !grassPositions.empty()) {
@@ -397,13 +428,6 @@ void drawScene(GLuint currentShaderProgram,
 		glEnable(GL_CULL_FACE);
 		labhelper::setUniformSlow(currentShaderProgram, "isGrass", false);
 	}
-
-	////Get the time
-	//float currentTime = SDL_GetTicks() / 1000.0f;
-
-	//// Find the location and upload it
-	//GLuint timeLoc = glGetUniformLocation(shaderProgram, "currentTime");
-	//glUniform1f(timeLoc, currentTime);
 }
 
 
@@ -433,41 +457,76 @@ void display(void)
 	///////////////////////////////////////////////////////////////////////////
 	mat4 projMatrix = perspective(radians(45.0f), float(windowWidth) / float(windowHeight), 5.0f, 5000.0f);
 	mat4 viewMatrix = lookAt(cameraPosition, cameraPosition + cameraDirection, worldUp);
+	vec3 vsLightDir = normalize(vec3(viewMatrix * vec4(-lightPosition, 0.0f)));
 
 	float radius = 1200.0f;
 	float dayAngle = currentTime * daySpeed * 0.1f;
 	vec3 sunDir = vec3(0.0f, sin(dayAngle), cos(dayAngle));
 	lightPosition = vec3(0.0f, sin(dayAngle) * radius, cos(dayAngle) * radius);
 
-	mat4 lightViewMatrix = lookAt(lightPosition, vec3(0.0f), worldUp);
-	mat4 lightProjMatrix = perspective(radians(45.0f), 1.0f, 25.0f, 100.0f);
+	//mat4 lightViewMatrix = lookAt(lightPosition, vec3(0.0f), worldUp);
+	//mat4 lightProjMatrix = perspective(radians(45.0f), 1.0f, 25.0f, 100.0f);
+
+	mat4 lightProjMatrix = ortho(-2000.0f, 2000.0f, -2000.0f, 2000.0f, 1.0f, 5000.0f);
+	mat4 lightViewMatrix = lookAt(lightPosition, vec3(0.0f), vec3(0.0f, 1.0f, 0.0f));
+	mat4 lightSpaceMatrix = lightProjMatrix * lightViewMatrix;
+
+	//render to shadow map
+	glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
+	glViewport(0, 0, shadowMapSize, shadowMapSize);
+	glClear(GL_DEPTH_BUFFER_BIT);
+	
+	//simple shader for depth
+	glEnable(GL_CULL_FACE);
+	glCullFace(GL_FRONT);
+	drawScene(simpleShaderProgram, lightViewMatrix, lightProjMatrix, lightViewMatrix, lightProjMatrix, vsLightDir);
+	glCullFace(GL_BACK);
+
+	//final render to screen
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glViewport(0, 0, windowWidth, windowHeight);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	///////////////////////////////////////////////////////////////////////////
 	// Bind the environment map(s) to unused texture units
 	///////////////////////////////////////////////////////////////////////////
-	glActiveTexture(GL_TEXTURE6);
-	glBindTexture(GL_TEXTURE_2D, environmentMap);
-	glActiveTexture(GL_TEXTURE0);
-
+	//glActiveTexture(GL_TEXTURE6);
+	//glBindTexture(GL_TEXTURE_2D, environmentMap);
+	//glActiveTexture(GL_TEXTURE0);
 
 	///////////////////////////////////////////////////////////////////////////
 	// Draw from camera
 	///////////////////////////////////////////////////////////////////////////
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glViewport(0, 0, windowWidth, windowHeight);
-	glClearColor(0.2f, 0.2f, 0.8f, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	//glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	//glViewport(0, 0, windowWidth, windowHeight);
+	//glClearColor(0.2f, 0.2f, 0.8f, 1.0f);
+	//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	{
-		labhelper::perf::Scope s("Background");
-		glDisable(GL_DEPTH_TEST);
-		drawBackground(viewMatrix, projMatrix);
-		glEnable(GL_DEPTH_TEST);
-	}
-	{
-		labhelper::perf::Scope s( "Scene" );
-		drawScene( shaderProgram, viewMatrix, projMatrix, lightViewMatrix, lightProjMatrix );
-	}
+	//bind shadow map to texture unit 1
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, shadowMapFBODepth);
+
+	glDisable(GL_DEPTH_TEST);
+	drawBackground(viewMatrix, projMatrix);
+	glEnable(GL_DEPTH_TEST);
+
+	glUseProgram(shaderProgram);
+	labhelper::setUniformSlow(shaderProgram, "lightSpaceMatrix", lightSpaceMatrix);
+	labhelper::setUniformSlow(shaderProgram, "shadowMap", 1);
+	drawScene(shaderProgram, viewMatrix, projMatrix, lightViewMatrix, lightProjMatrix, vsLightDir);
+	//{
+	//	labhelper::perf::Scope s("Background");
+	//	glDisable(GL_DEPTH_TEST);
+	//	drawBackground(viewMatrix, projMatrix);
+	//	glEnable(GL_DEPTH_TEST);
+	//}
+	//{
+	//	labhelper::perf::Scope s( "Scene" );
+	//	glUseProgram(shaderProgram);
+	//	labhelper::setUniformSlow(shaderProgram, "lightSpaceMatrix", lightSpaceMatrix);
+	//	labhelper::setUniformSlow(shaderProgram, "shadowMap", 1); // Unit 1
+	//	drawScene( shaderProgram, viewMatrix, projMatrix, lightViewMatrix, lightProjMatrix );
+	//}
 	debugDrawLight(viewMatrix, projMatrix, vec3(lightPosition));
 
 }

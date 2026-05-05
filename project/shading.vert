@@ -15,6 +15,9 @@ uniform mat4 normalMatrix;
 uniform mat4 modelViewMatrix;
 uniform mat4 modelViewProjectionMatrix;
 uniform float currentTime;
+uniform bool isGrass;
+uniform mat4 lightSpaceMatrix;
+uniform mat4 viewInverse;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Output to fragment shader
@@ -25,8 +28,8 @@ out vec3 modelNormal;
 out vec3 viewSpacePosition;
 out vec3 modelSpacePos;
 out float height;
-
-uniform bool isGrass;
+out vec4 vFragPosLightSpace;
+out vec3 worldSpacePos;
 
 void main()
 {
@@ -72,17 +75,17 @@ void main()
 	}
 
 	// Calculate actual position
-	vec3 worldPos = pos + instanceOffset;
+	vec3 worldPosFixed = pos + instanceOffset;
+	vec4 worldPosVec4 = vec4(worldPosFixed, 1.0);
+	worldSpacePos = worldPosFixed;
 	
 	// Use the scaled/positioned Y for height logic
-	height = worldPos.y; 
+	height = worldPosFixed.y; 
 	modelSpacePos = pos;
-
-	gl_Position = modelViewProjectionMatrix * vec4(worldPos, 1.0);
 	texCoord = texCoordIn;
-
-	// Use vNormal (which was rotated) instead of the raw normalIn
 	viewSpaceNormal = (normalMatrix * vec4(vNormal, 0.0)).xyz;
-	
-	viewSpacePosition = (modelViewMatrix * vec4(worldPos, 1.0)).xyz;
+	viewSpacePosition = (modelViewMatrix * vec4(worldPosFixed, 1.0)).xyz;
+
+	vFragPosLightSpace = lightSpaceMatrix * worldPosVec4;
+	gl_Position = modelViewProjectionMatrix * vec4(worldPosFixed, 1.0);
 }
