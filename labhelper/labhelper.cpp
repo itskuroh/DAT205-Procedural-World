@@ -46,7 +46,6 @@ namespace labhelper
 
 static bool s_show_gui = true;
 
-
 SDL_Window* init_window_SDL(std::string caption, int width, int height)
 {
 	// Initialize SDL
@@ -839,4 +838,51 @@ GLuint loadTexture(const std::string& filename)
 	stbi_image_free(image);
 	return textureID;
 }
+ProceduralMesh createProceduralStrip(int width, int depth) {
+	std::vector<glm::vec3> vertices;
+	std::vector<uint32_t> indices;
+
+	// 1. Generate flat vertex grid on XZ plane
+	for (int z = 0; z <= depth; z++) {
+		for (int x = 0; x <= width; x++) {
+			vertices.push_back(glm::vec3(float(x), 0.0f, float(z)));
+		}
+	}
+
+	// 2. Generate indices for triangles
+	for (int z = 0; z < depth; z++) {
+		for (int x = 0; x < width; x++) {
+			int start = z * (width + 1) + x;
+			// Triangle 1
+			indices.push_back(start);
+			indices.push_back(start + width + 1);
+			indices.push_back(start + 1);
+			// Triangle 2
+			indices.push_back(start + 1);
+			indices.push_back(start + width + 1);
+			indices.push_back(start + width + 2);
+		}
+	}
+
+	ProceduralMesh mesh;
+	mesh.numIndices = (int)indices.size();
+
+	glGenVertexArrays(1, &mesh.vao);
+	glBindVertexArray(mesh.vao);
+
+	GLuint vbo, ebo;
+	glGenBuffers(1, &vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), vertices.data(), GL_STATIC_DRAW);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+	glEnableVertexAttribArray(0);
+
+	glGenBuffers(1, &ebo);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(uint32_t), indices.data(), GL_STATIC_DRAW);
+
+	glBindVertexArray(0); // Unbind for safety
+	return mesh;
+}
+
 } // namespace labhelper

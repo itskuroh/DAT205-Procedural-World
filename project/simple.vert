@@ -1,6 +1,7 @@
 #version 420
 layout(location = 0) in vec3 position;
-layout(location = 4) in vec3 instanceOffset;
+//layout(location = 4) in vec3 instanceOffset;
+uniform vec3 instanceOffset;
 
 uniform mat4 modelViewProjectionMatrix;
 uniform bool isGrass;

@@ -34,7 +34,7 @@ float currentTime = 0.0f;
 float previousTime = 0.0f;
 float deltaTime = 0.0f;
 int windowWidth, windowHeight;
-float terrainSize = 1000.0f;		//change as needed
+//float terrainSize = 3000.0f;		//change as needed
 int waterVertexCount;
 
 // Mouse input
@@ -44,6 +44,12 @@ bool g_isMouseDragging = false;
 int grassCount = 100;
 const int maxGrassCount = 1000;
 float daySpeed = 0.5f;
+
+const int   TERRAIN_GRID_W = 105;      // chunks along X
+const int   TERRAIN_GRID_H = 105;      // chunks along Z
+const int   TERRAIN_CHUNK_V = 33;      // vertices per chunk edge (must be 2^n+1)
+const float terrainScale = 1.5f;    // world units per vertex step (was hardcoded 1.5f before)
+float terrainSize = (TERRAIN_GRID_W * (TERRAIN_CHUNK_V - 1) * terrainScale) * 0.5f;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Shader programs
@@ -112,19 +118,19 @@ void loadShaders(bool is_reload);
 void loadShaders(bool is_reload)
 {
 	GLuint shader = labhelper::loadShaderProgram("../project/simple.vert", "../project/simple.frag", is_reload);
-	if(shader != 0)
+	if (shader != 0)
 	{
 		simpleShaderProgram = shader;
 	}
 
 	shader = labhelper::loadShaderProgram("../project/background.vert", "../project/background.frag", is_reload);
-	if(shader != 0)
+	if (shader != 0)
 	{
 		backgroundProgram = shader;
 	}
 
 	shader = labhelper::loadShaderProgram("../project/shading.vert", "../project/shading.frag", is_reload);
-	if(shader != 0)
+	if (shader != 0)
 	{
 		shaderProgram = shader;
 	}
@@ -136,7 +142,7 @@ void initWater() {
 	std::vector<uint32_t> indices;
 
 	int res = 200; // Resolution: 200x200 grid
-	float size = 2000.0f;
+	float size = 5000.0f;
 
 	for (int z = 0; z <= res; z++) {
 		for (int x = 0; x <= res; x++) {
@@ -204,7 +210,7 @@ void initShadowMap() {
 	// Clamp to border to prevent "shadow stretching" outside the light frustum
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-	float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	float borderColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
 	glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
@@ -221,7 +227,7 @@ void initialize()
 {
 	ENSURE_INITIALIZE_ONLY_ONCE();
 	srand(static_cast<unsigned int>(time(NULL)));
-	myTerrain.init(terrainSize, terrainSize, 1.5f);
+	myTerrain.init(TERRAIN_GRID_W, TERRAIN_GRID_H, TERRAIN_CHUNK_V, terrainScale);
 	///////////////////////////////////////////////////////////////////////
 	//		Load Shaders
 	///////////////////////////////////////////////////////////////////////
@@ -270,8 +276,8 @@ void initialize()
 }
 
 void debugDrawLight(const glm::mat4& viewMatrix,
-                    const glm::mat4& projectionMatrix,
-                    const glm::vec3& worldSpaceLightPos)
+	const glm::mat4& projectionMatrix,
+	const glm::vec3& worldSpaceLightPos)
 {
 	mat4 modelMatrix = glm::translate(worldSpaceLightPos);
 	glUseProgram(shaderProgram);
@@ -307,8 +313,9 @@ glm::vec3 getTerrainNormal(float x, float z, float terrainScale) {
 }
 
 void generateGrass() {
-	float terrainScale = 1.5f;
-	float halfSize = (terrainSize / 2.0f) * terrainScale;
+	grassPositions.clear();
+	grassNormals.clear();
+	float halfSize = terrainSize;
 
 	for (int i = 0; i < 3000; i++) {
 		float x = labhelper::uniform_randf(-halfSize, halfSize);
@@ -318,13 +325,13 @@ void generateGrass() {
 		float h = myTerrain.getHeightAt(x, z, terrainScale);
 
 		// Place grass only on the plains (above sand, below rock)
-		if (h > 5.0f && h < 25.0f) {
+		if (h > 30.0f && h < 36.0f) {
 			grassPositions.push_back(glm::vec3(x, h, z));
 
 			grassNormals.push_back(getTerrainNormal(x, z, terrainScale));
 		}
 	}
-	
+
 	if (grassInstanceBuffer == 0) glGenBuffers(1, &grassInstanceBuffer);
 	glBindBuffer(GL_ARRAY_BUFFER, grassInstanceBuffer);
 	glBufferData(GL_ARRAY_BUFFER, grassPositions.size() * sizeof(glm::vec3), grassPositions.data(), GL_STATIC_DRAW);
@@ -342,11 +349,11 @@ void generateGrass() {
 /// This function is used to draw the main objects on the scene
 ///////////////////////////////////////////////////////////////////////////////
 void drawScene(GLuint currentShaderProgram,
-               const mat4& viewMatrix,
-               const mat4& projectionMatrix,
-               const mat4& lightViewMatrix,
-               const mat4& lightProjectionMatrix,
-			   const vec3& vsLightDir)
+	const mat4& viewMatrix,
+	const mat4& projectionMatrix,
+	const mat4& lightViewMatrix,
+	const mat4& lightProjectionMatrix,
+	const vec3& vsLightDir)
 {
 	glUseProgram(currentShaderProgram);
 
@@ -380,7 +387,8 @@ void drawScene(GLuint currentShaderProgram,
 	labhelper::setUniformSlow(currentShaderProgram, "modelViewMatrix", modelViewMatrix);
 	labhelper::setUniformSlow(currentShaderProgram, "normalMatrix", normalMatrix);
 
-	myTerrain.render();
+	mat4 projViewMatrix = projectionMatrix * viewMatrix;
+	myTerrain.render(cameraPosition, projectionMatrix * viewMatrix);
 
 	//draw water
 	if (currentShaderProgram == shaderProgram) {
@@ -437,7 +445,7 @@ void drawScene(GLuint currentShaderProgram,
 ///////////////////////////////////////////////////////////////////////////////
 void display(void)
 {
-	labhelper::perf::Scope s( "Display" );
+	labhelper::perf::Scope s("Display");
 
 	///////////////////////////////////////////////////////////////////////////
 	// Check if window size has changed and resize buffers as needed
@@ -445,7 +453,7 @@ void display(void)
 	{
 		int w, h;
 		SDL_GetWindowSize(g_window, &w, &h);
-		if(w != windowWidth || h != windowHeight)
+		if (w != windowWidth || h != windowHeight)
 		{
 			windowWidth = w;
 			windowHeight = h;
@@ -461,25 +469,42 @@ void display(void)
 
 	float radius = 1200.0f;
 	float dayAngle = currentTime * daySpeed * 0.1f;
-	vec3 sunDir = vec3(0.0f, sin(dayAngle), cos(dayAngle));
 	lightPosition = vec3(0.0f, sin(dayAngle) * radius, cos(dayAngle) * radius);
+	vec3 sunDir = normalize(lightPosition);
+	vec3 shadowCenter = vec3(cameraPosition.x, 0.0f, cameraPosition.z);
 
-	//mat4 lightViewMatrix = lookAt(lightPosition, vec3(0.0f), worldUp);
-	//mat4 lightProjMatrix = perspective(radians(45.0f), 1.0f, 25.0f, 100.0f);
+	mat4 lightViewMatrix = lookAt(shadowCenter + sunDir * 2000.0f, shadowCenter, worldUp);
 
-	mat4 lightProjMatrix = ortho(-2000.0f, 2000.0f, -2000.0f, 2000.0f, 1.0f, 5000.0f);
-	mat4 lightViewMatrix = lookAt(lightPosition, vec3(0.0f), vec3(0.0f, 1.0f, 0.0f));
+	mat4 invProjView = inverse(projMatrix * viewMatrix);
+	vec4 ndcCorners[8] = {
+		{-1,-1,-1,1}, { 1,-1,-1,1}, {-1, 1,-1,1}, { 1, 1,-1,1},
+		{-1,-1, 1,1}, { 1,-1, 1,1}, {-1, 1, 1,1}, { 1, 1, 1,1},
+	};
+	float lsMinX = 1e9f, lsMaxX = -1e9f;
+	float lsMinY = 1e9f, lsMaxY = -1e9f;
+	float lsMinZ = 1e9f, lsMaxZ = -1e9f;
+	for (auto& c : ndcCorners) {
+		vec4 world = invProjView * c;
+		world /= world.w;
+		vec4 ls = lightViewMatrix * world;
+		lsMinX = min(lsMinX, ls.x); lsMaxX = max(lsMaxX, ls.x);
+		lsMinY = min(lsMinY, ls.y); lsMaxY = max(lsMaxY, ls.y);
+		lsMinZ = min(lsMinZ, ls.z); lsMaxZ = max(lsMaxZ, ls.z);
+	}
+	lsMinZ -= 500.0f; // Pull near plane back so off-screen casters still cast shadows
+
+	mat4 lightProjMatrix = ortho(lsMinX, lsMaxX, lsMinY, lsMaxY, -lsMaxZ, -lsMinZ);
 	mat4 lightSpaceMatrix = lightProjMatrix * lightViewMatrix;
 
 	//render to shadow map
 	glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
 	glViewport(0, 0, shadowMapSize, shadowMapSize);
 	glClear(GL_DEPTH_BUFFER_BIT);
-	
+
 	//simple shader for depth
 	glEnable(GL_CULL_FACE);
 	glCullFace(GL_FRONT);
-	drawScene(simpleShaderProgram, lightViewMatrix, lightProjMatrix, lightViewMatrix, lightProjMatrix, vsLightDir);
+	//drawScene(simpleShaderProgram, lightViewMatrix, lightProjMatrix, lightViewMatrix, lightProjMatrix, vsLightDir);
 	glCullFace(GL_BACK);
 
 	//final render to screen
@@ -540,17 +565,17 @@ bool handleEvents(void)
 	// check events (keyboard among other)
 	SDL_Event event;
 	bool quitEvent = false;
-	while(SDL_PollEvent(&event))
+	while (SDL_PollEvent(&event))
 	{
-		labhelper::processEvent( &event );
+		labhelper::processEvent(&event);
 
-		if(event.type == SDL_QUIT || (event.type == SDL_KEYUP && event.key.keysym.sym == SDLK_ESCAPE))
+		if (event.type == SDL_QUIT || (event.type == SDL_KEYUP && event.key.keysym.sym == SDLK_ESCAPE))
 		{
 			quitEvent = true;
 		}
-		if(event.type == SDL_KEYUP && event.key.keysym.sym == SDLK_g)
+		if (event.type == SDL_KEYUP && event.key.keysym.sym == SDLK_g)
 		{
-			if ( labhelper::isGUIvisible() )
+			if (labhelper::isGUIvisible())
 			{
 				labhelper::hideGUI();
 			}
@@ -559,8 +584,8 @@ bool handleEvents(void)
 				labhelper::showGUI();
 			}
 		}
-		if(event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT
-		   && (!labhelper::isGUIvisible() || !ImGui::GetIO().WantCaptureMouse))
+		if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT
+			&& (!labhelper::isGUIvisible() || !ImGui::GetIO().WantCaptureMouse))
 		{
 			g_isMouseDragging = true;
 			int x;
@@ -570,12 +595,12 @@ bool handleEvents(void)
 			g_prevMouseCoords.y = y;
 		}
 
-		if(!(SDL_GetMouseState(NULL, NULL) & SDL_BUTTON(SDL_BUTTON_LEFT)))
+		if (!(SDL_GetMouseState(NULL, NULL) & SDL_BUTTON(SDL_BUTTON_LEFT)))
 		{
 			g_isMouseDragging = false;
 		}
 
-		if(event.type == SDL_MOUSEMOTION && g_isMouseDragging)
+		if (event.type == SDL_MOUSEMOTION && g_isMouseDragging)
 		{
 			// More info at https://wiki.libsdl.org/SDL_MouseMotionEvent
 			int delta_x = event.motion.x - g_prevMouseCoords.x;
@@ -583,7 +608,7 @@ bool handleEvents(void)
 			float rotationSpeed = 0.1f;
 			mat4 yaw = rotate(rotationSpeed * deltaTime * -delta_x, worldUp);
 			mat4 pitch = rotate(rotationSpeed * deltaTime * -delta_y,
-			                    normalize(cross(cameraDirection, worldUp)));
+				normalize(cross(cameraDirection, worldUp)));
 			cameraDirection = vec3(pitch * yaw * vec4(cameraDirection, 0.0f));
 			g_prevMouseCoords.x = event.motion.x;
 			g_prevMouseCoords.y = event.motion.y;
@@ -594,27 +619,27 @@ bool handleEvents(void)
 	const uint8_t* state = SDL_GetKeyboardState(nullptr);
 	vec3 cameraRight = cross(cameraDirection, worldUp);
 
-	if(state[SDL_SCANCODE_W])
+	if (state[SDL_SCANCODE_W])
 	{
 		cameraPosition += cameraSpeed * deltaTime * cameraDirection;
 	}
-	if(state[SDL_SCANCODE_S])
+	if (state[SDL_SCANCODE_S])
 	{
 		cameraPosition -= cameraSpeed * deltaTime * cameraDirection;
 	}
-	if(state[SDL_SCANCODE_A])
+	if (state[SDL_SCANCODE_A])
 	{
 		cameraPosition -= cameraSpeed * deltaTime * cameraRight;
 	}
-	if(state[SDL_SCANCODE_D])
+	if (state[SDL_SCANCODE_D])
 	{
 		cameraPosition += cameraSpeed * deltaTime * cameraRight;
 	}
-	if(state[SDL_SCANCODE_Q])
+	if (state[SDL_SCANCODE_Q])
 	{
 		cameraPosition -= cameraSpeed * deltaTime * worldUp;
 	}
-	if(state[SDL_SCANCODE_E])
+	if (state[SDL_SCANCODE_E])
 	{
 		cameraPosition += cameraSpeed * deltaTime * worldUp;
 	}
@@ -629,7 +654,7 @@ void gui()
 {
 	// ----------------- Set variables --------------------------
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate,
-	ImGui::GetIO().Framerate);
+		ImGui::GetIO().Framerate);
 	// ----------------------------------------------------------
 	ImGui::Separator();
 
@@ -662,7 +687,7 @@ int main(int argc, char* argv[])
 	bool stopRendering = false;
 	auto startTime = std::chrono::system_clock::now();
 
-	while(!stopRendering)
+	while (!stopRendering)
 	{
 		//update currentTime
 		std::chrono::duration<float> timeSinceStart = std::chrono::system_clock::now() - startTime;
@@ -674,7 +699,7 @@ int main(int argc, char* argv[])
 		stopRendering = handleEvents();
 
 		// Inform imgui of new frame
-		labhelper::newFrame( g_window );
+		labhelper::newFrame(g_window);
 
 		// render to window
 		display();

@@ -79,7 +79,7 @@ float calculateShadow(vec3 n, vec3 worldLightDir) {
         return 0.0; 
     }
     // returns 1.0 if not in shadow, 0.0 if in shadow
-    float bias = max(0.005 * (1.0 - dot(n, worldLightDir)), 0.0005);
+    float bias = mix(0.005, 0.05, 1.0 - dot(n, worldLightDir));
     projCoords.z -= bias;
     
     return 1.0 - texture(shadowMap, projCoords);
@@ -103,6 +103,8 @@ void main()
 	vec3 wo = -normalize(viewSpacePosition);
 	//vec3 n = normalize(viewSpaceNormal);
     vec3 n = normalize(mat3(viewInverse) * viewSpaceNormal);
+    vec3 l = normalize(lightPosition - worldSpacePos);
+    float shadow = calculateShadow(n, l);
 
 	// Direct illumination
 	vec3 direct_illumination_term = visibility * calculateDirectIllumiunation(wo, n);
@@ -174,9 +176,9 @@ void main()
     }
 
     // day/night cycle
-    float sunLevel = viewSpaceLightPosition.y;
+    float sunLevel = lightPosition.y;
     // fades out when sun at altitude 50 to -10
-    float directMask = smoothstep(-10.0, 50.0, sunLevel);
+    float directMask = smoothstep(-150.0, 50.0, sunLevel);
     float ambientMask = smoothstep(-300.0, 100.0, sunLevel);
 
     // sunset
@@ -189,11 +191,10 @@ void main()
     //float diff = max(dot(n, -viewSpaceLightDir), 0.0) * directMask;
     vec3 worldLightDir = normalize(lightPosition - worldSpacePos);
     float diff = max(dot(n, worldLightDir), 0.0) * directMask;
-    float shadow = calculateShadow(n, worldLightDir);
     
     // Ambient: Darker at night, lush during day
-    float nightAmbient = 0.1;   //higher = brighter at night
-    float dayAmbient = isGrass ? 0.5 : 0.25;
+    float nightAmbient = 0.18;   //higher = brighter at night
+    float dayAmbient = isGrass ? 0.5 : 0.35;
     float ambient = mix(nightAmbient, dayAmbient, ambientMask);
     
     float ambientFactor = smoothstep(-400.0, 100.0, viewSpaceLightPosition.y);
@@ -212,11 +213,12 @@ void main()
 
     // fog
     float dist = length(viewSpacePosition);
-    float fogFactor = clamp((dist - 300.0) / 800.0, 0.0, 1.0); 
+    float fogFactor = clamp((dist - 1000.0) / 4000.0, 0.0, 1.0);
     
     vec3 dayFog = vec3(0.5, 0.6, 0.7);
     vec3 nightFog = vec3(0.01, 0.02, 0.05);
     vec3 currentFog = mix(nightFog, dayFog, ambientMask);
 
     fragmentColor = vec4(mix(finalColor, currentFog, fogFactor), 1.0);
+    //fragmentColor = vec4(vFragPosLightSpace.xyz, 1.0);
 }
