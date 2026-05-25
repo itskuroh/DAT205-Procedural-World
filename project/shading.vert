@@ -16,6 +16,7 @@ uniform mat4 modelViewMatrix;
 uniform mat4 modelViewProjectionMatrix;
 uniform float currentTime;
 uniform bool isGrass;
+uniform bool isCloud;
 uniform mat4 lightSpaceMatrix;
 uniform mat4 viewInverse;
 
@@ -38,7 +39,7 @@ void main()
 	modelNormal = normalIn;
 
 	if (isGrass) {
-		float scale = 0.5;
+		float scale = 5.0;
 		pos = position * scale;
 
 		float baseOffset = 2.0;
@@ -73,6 +74,25 @@ void main()
 		pos.x += wave * pos.y * windStrength;
         pos.z += wave * pos.y * windStrength * 0.5;
 	}
+
+if (isCloud) {
+    float cloudScale = 150.0;       // tune size here
+    vec3 scaledPos = pos * cloudScale;
+
+    vec3 worldPosFixed = scaledPos + instanceOffset;
+    vec4 worldPosVec4  = vec4(worldPosFixed, 1.0);
+    worldSpacePos      = worldPosFixed;
+
+    height             = worldPosFixed.y;
+    modelSpacePos      = scaledPos;
+    texCoord           = texCoordIn;
+    viewSpaceNormal    = (normalMatrix * vec4(vNormal, 0.0)).xyz;
+    viewSpacePosition  = (modelViewMatrix * vec4(worldPosFixed, 1.0)).xyz;
+
+    vFragPosLightSpace = lightSpaceMatrix * worldPosVec4;
+    gl_Position        = modelViewProjectionMatrix * vec4(worldPosFixed, 1.0);
+    return;
+}
 
 	// Calculate actual position
 	vec3 worldPosFixed = pos + instanceOffset;

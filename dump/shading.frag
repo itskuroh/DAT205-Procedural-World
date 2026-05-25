@@ -79,7 +79,7 @@ float calculateShadow(vec3 n, vec3 worldLightDir) {
         return 0.0; 
     }
     // returns 1.0 if not in shadow, 0.0 if in shadow
-    float bias = max(0.005 * (1.0 - dot(n, worldLightDir)), 0.0005);
+    float bias = mix(0.005, 0.05, 1.0 - dot(n, worldLightDir));
     projCoords.z -= bias;
     
     return 1.0 - texture(shadowMap, projCoords);
@@ -176,9 +176,9 @@ void main()
     }
 
     // day/night cycle
-    float sunLevel = viewSpaceLightPosition.y;
+    float sunLevel = lightPosition.y;
     // fades out when sun at altitude 50 to -10
-    float directMask = smoothstep(-10.0, 50.0, sunLevel);
+    float directMask = smoothstep(-150.0, 50.0, sunLevel);
     float ambientMask = smoothstep(-300.0, 100.0, sunLevel);
 
     // sunset
@@ -193,8 +193,8 @@ void main()
     float diff = max(dot(n, worldLightDir), 0.0) * directMask;
     
     // Ambient: Darker at night, lush during day
-    float nightAmbient = 0.1;   //higher = brighter at night
-    float dayAmbient = isGrass ? 0.5 : 0.25;
+    float nightAmbient = 0.18;   //higher = brighter at night
+    float dayAmbient = isGrass ? 0.5 : 0.35;
     float ambient = mix(nightAmbient, dayAmbient, ambientMask);
     
     float ambientFactor = smoothstep(-400.0, 100.0, viewSpaceLightPosition.y);

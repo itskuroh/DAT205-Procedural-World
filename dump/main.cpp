@@ -34,7 +34,7 @@ float currentTime = 0.0f;
 float previousTime = 0.0f;
 float deltaTime = 0.0f;
 int windowWidth, windowHeight;
-float terrainSize = 3000.0f;		//change as needed
+//float terrainSize = 3000.0f;		//change as needed
 int waterVertexCount;
 
 // Mouse input
@@ -42,8 +42,15 @@ ivec2 g_prevMouseCoords = { -1, -1 };
 bool g_isMouseDragging = false;
 
 int grassCount = 100;
-const int maxGrassCount = 1000;
+const int maxGrassCount = 10000;
 float daySpeed = 0.5f;
+float dayAngle = 0.0f;
+
+const int   TERRAIN_GRID_W = 105;      // chunks along X
+const int   TERRAIN_GRID_H = 105;      // chunks along Z
+const int   TERRAIN_CHUNK_V = 33;      // vertices per chunk edge (must be 2^n+1)
+const float terrainScale = 1.5f;    // world units per vertex step (was hardcoded 1.5f before)
+float terrainSize = (TERRAIN_GRID_W * (TERRAIN_CHUNK_V - 1) * terrainScale) * 0.5f;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Shader programs
@@ -204,7 +211,7 @@ void initShadowMap() {
 	// Clamp to border to prevent "shadow stretching" outside the light frustum
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-	float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	float borderColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
 	glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
@@ -221,7 +228,7 @@ void initialize()
 {
 	ENSURE_INITIALIZE_ONLY_ONCE();
 	srand(static_cast<unsigned int>(time(NULL)));
-	myTerrain.init(terrainSize, terrainSize, 1.5f);
+	myTerrain.init(TERRAIN_GRID_W, TERRAIN_GRID_H, TERRAIN_CHUNK_V, terrainScale);
 	///////////////////////////////////////////////////////////////////////
 	//		Load Shaders
 	///////////////////////////////////////////////////////////////////////
@@ -232,7 +239,7 @@ void initialize()
 	///////////////////////////////////////////////////////////////////////
 	grassModel = labhelper::loadModelFromOBJ("../scenes/grass3.obj");
 	if (grassModel == nullptr) {
-		printf("ERROR: grass.obj not found!\n");
+		printf("ERROR: grass obj file not found!\n");
 	}
 	else {
 		printf("SUCCESS: Loaded %zu meshes for grass.\n", grassModel->m_meshes.size());
@@ -309,8 +316,7 @@ glm::vec3 getTerrainNormal(float x, float z, float terrainScale) {
 void generateGrass() {
 	grassPositions.clear();
 	grassNormals.clear();
-	float terrainScale = 1.5f;
-	float halfSize = (terrainSize / 2.0f) * terrainScale;
+	float halfSize = terrainSize;
 
 	for (int i = 0; i < 3000; i++) {
 		float x = labhelper::uniform_randf(-halfSize, halfSize);
@@ -319,8 +325,11 @@ void generateGrass() {
 		// Call our new height function
 		float h = myTerrain.getHeightAt(x, z, terrainScale);
 
+		glm::vec3 normal = getTerrainNormal(x, z, terrainScale);
+		float slope = 1.0f - normal.y;
+
 		// Place grass only on the plains (above sand, below rock)
-		if (h > 30.0f && h < 36.0f) {
+		if (h > 2.0f && h < 35.0f && slope < 0.75f) {
 			grassPositions.push_back(glm::vec3(x, h, z));
 
 			grassNormals.push_back(getTerrainNormal(x, z, terrainScale));
@@ -382,7 +391,8 @@ void drawScene(GLuint currentShaderProgram,
 	labhelper::setUniformSlow(currentShaderProgram, "modelViewMatrix", modelViewMatrix);
 	labhelper::setUniformSlow(currentShaderProgram, "normalMatrix", normalMatrix);
 
-	myTerrain.render();
+	mat4 projViewMatrix = projectionMatrix * viewMatrix;
+	myTerrain.render(cameraPosition, projectionMatrix * viewMatrix);
 
 	//draw water
 	if (currentShaderProgram == shaderProgram) {
@@ -462,18 +472,33 @@ void display(void)
 	vec3 vsLightDir = normalize(vec3(viewMatrix * vec4(-lightPosition, 0.0f)));
 
 	float radius = 1200.0f;
-	float dayAngle = currentTime * daySpeed * 0.1f;
-	//vec3 sunDir = vec3(0.0f, sin(dayAngle), cos(dayAngle));
 	lightPosition = vec3(0.0f, sin(dayAngle) * radius, cos(dayAngle) * radius);
 	vec3 sunDir = normalize(lightPosition);
 	vec3 shadowCenter = vec3(cameraPosition.x, 0.0f, cameraPosition.z);
 
-	//mat4 lightViewMatrix = lookAt(lightPosition, vec3(0.0f), worldUp);
-	//mat4 lightProjMatrix = perspective(radians(45.0f), 1.0f, 25.0f, 100.0f);
-
-	mat4 lightProjMatrix = ortho(-terrainSize, terrainSize, -terrainSize, terrainSize, 1.0f, 7500.0f);
-	//mat4 lightViewMatrix = lookAt(lightPosition, vec3(0.0f), vec3(0.0f, 1.0f, 0.0f));
 	mat4 lightViewMatrix = lookAt(shadowCenter + sunDir * 2000.0f, shadowCenter, worldUp);
+
+	mat4 invProjView = inverse(projMatrix * viewMatrix);
+	vec4 ndcCorners[8] = {
+		{-1,-1,-1,1}, { 1,-1,-1,1}, {-1, 1,-1,1}, { 1, 1,-1,1},
+		{-1,-1, 1,1}, { 1,-1, 1,1}, {-1, 1, 1,1}, { 1, 1, 1,1},
+	};
+	float lsMinX = 1e9f, lsMaxX = -1e9f;
+	float lsMinY = 1e9f, lsMaxY = -1e9f;
+	float lsMinZ = 1e9f, lsMaxZ = -1e9f;
+	for (auto& c : ndcCorners) {
+		vec4 world = invProjView * c;
+		world /= world.w;
+		vec4 ls = lightViewMatrix * world;
+		lsMinX = min(lsMinX, ls.x); lsMaxX = max(lsMaxX, ls.x);
+		lsMinY = min(lsMinY, ls.y); lsMaxY = max(lsMaxY, ls.y);
+		lsMinZ = min(lsMinZ, ls.z); lsMaxZ = max(lsMaxZ, ls.z);
+	}
+	lsMinZ -= 2000.0f;  // was 500.0f — pull back further to catch tall casters behind camera
+	lsMaxY += 400.0f;   // extend upward in light space to catch peak geometry
+	lsMinY -= 400.0f;   // extend downward symmetrically
+
+	mat4 lightProjMatrix = ortho(lsMinX, lsMaxX, lsMinY, lsMaxY, -lsMaxZ, -lsMinZ);
 	mat4 lightSpaceMatrix = lightProjMatrix * lightViewMatrix;
 
 	//render to shadow map
@@ -682,6 +707,7 @@ int main(int argc, char* argv[])
 		labhelper::newFrame(g_window);
 
 		// render to window
+		dayAngle += deltaTime * daySpeed * 0.1f;
 		display();
 
 		// Render overlay GUI.

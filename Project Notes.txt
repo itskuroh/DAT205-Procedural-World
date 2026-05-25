@@ -1,0 +1,225 @@
+## 1. Terrain Mesh Generation 
+
+Before mesh generation, noise function is called at each vertex to obtain its would-be height.
+	- Noise: Each vertex has a lattice cube. In each corner of the cube, the noise function generates a random value, the blends them together to create a final height value for each vertex.
+
+Neighbouring vertices are connected by the index buffer to form the triangles that become the final terrain.
+	
+
+### Normals
+After positions are calculated, normals are computed by taking the **cross product** of two edge vectors of each triangle. The cross product of two vectors that lie on a surface gives a vector perpendicular to that surface. This is used by the lighting shader to determine how light hits each face. Your code accumulates normals from neighbouring triangles and averages them for smooth shading.
+
+### Upload to GPU
+The vertex and index data is uploaded once at startup via `glBufferData()` into a **VBO** (Vertex Buffer Object) stored on the GPU. A **VAO** (Vertex Array Object) remembers the layout — position at location 0, normal at location 1. An **IBO** (Index Buffer Object) stores the triangle connectivity (which vertices form each triangle) so vertices don't need to be duplicated. After upload, the CPU-side vectors are discarded; all the data lives on the GPU.
+
+---
+
+## 2. Chunked LOD System (CPU logic, GPU rendering)
+
+### Why chunks?
+A single 3000×3000 vertex mesh is ~18 million triangles submitted every frame. Most of those triangles are far away and contribute only a few pixels — wasteful. Splitting into chunks lets you render distant ones at lower resolution.
+
+### How LOD works
+Each `TerrainChunk` pre-builds **4 meshes at startup** at different resolutions:
+- **LOD 0** (step=1): full resolution, 64×64 quads per chunk
+- **LOD 1** (step=2): half resolution, 32×32 quads
+- **LOD 2** (step=4): quarter resolution, 16×16 quads
+- **LOD 3** (step=8): eighth resolution, 8×8 quads
+
+Each LOD level has 4× fewer triangles than the one above. LOD 3 has 1/64th the triangles of LOD 0.
+
+Every frame in `Terrain::render()`, for each chunk the CPU measures the distance from the camera to the chunk's centre and picks the LOD:
+- Under 600 units → LOD 0
+- 600–1500 units → LOD 1
+- 1500–3000 units → LOD 2
+- Over 3000 units → LOD 3
+
+Then it just binds the right VAO for that chunk and issues a `glDrawElements()` call. No CPU work per frame beyond the distance check.
+
+### Frustum culling
+Before even choosing a LOD, `isChunkVisible()` tests whether the chunk's bounding box intersects the camera's view frustum (the pyramid of space visible to the camera). The frustum is defined by 6 planes extracted from the combined projection×view matrix using the Gribb/Hartmann method — transposing the matrix and adding/subtracting its rows. If the chunk's AABB is entirely on the wrong side of any plane, it's skipped entirely. For a 90° FOV this culls roughly 60–70% of chunks every frame.
+
+---
+
+## 3. Water (CPU mesh, GPU animation)
+
+### The mesh
+`initWater()` creates a flat 200×200 grid of vertices covering 5000×5000 world units, at Y=0. It uses the same quad→triangle pattern as the terrain. UV coordinates are tiled 50× so the wave texture repeats densely across the surface. This mesh is **static** — it never changes on the CPU side.
+
+### Wave animation — entirely on the GPU
+In `water.vert`, three sine waves are added to each vertex's Y position every frame:
+```glsl
+float wave1 = sin(pos.x * 0.05 + currentTime * 1.5) * 2.0;
+float wave2 = sin((pos.x + pos.z) * 0.07 - currentTime * 1.5) * 1.8;
+float wave3 = cos(pos.z * 0.15 + currentTime * 2.5) * 0.6;
+pos.y += wave1 + wave2 + wave3;
+```
+Each wave has a different spatial frequency, travel direction, speed, and amplitude. Adding three waves at different angles creates interference patterns that look like realistic ocean surface movement. `currentTime` is a uniform updated every frame, so the waves scroll continuously.
+
+### Water shading
+In `water.frag`:
+- **Fresnel effect** — `pow(1 - dot(normal, viewDir), 5)` makes the water more reflective at grazing angles (when you look across the surface) and more transparent when looking straight down, matching real water physics
+- **Foam/whitecaps** — when `waveHeight > 3.5`, the colour blends toward white, simulating wave crests
+- **Transparency** — `alpha = 0.75`, rendered with `GL_BLEND` so the terrain shows through
+
+The water plane height is controlled by the `waterHeight` uniform slider, set via `translate(vec3(0, waterHeight, 0))` in the model matrix.
+
+---
+
+## 4. Day/Night Cycle (CPU logic, GPU shading)
+
+Sun Formation:
+	In each frame, the player camera fires a ray through each pixel. If this ray has a similar direction to the Sun's direction, this pixel is turned white.
+	The more similar in direction this ray is to the Sun, the brighter it is.
+
+
+### Sun movement
+In `display()`, every frame:
+```cpp
+float dayAngle = currentTime * daySpeed * 0.1f;
+lightPosition = vec3(0.0f, sin(dayAngle) * radius, cos(dayAngle) * radius);
+```
+The light position orbits in a circle of radius 1200 in the Y-Z plane. `sin` and `cos` trace a circle as `dayAngle` increases, so the sun rises, peaks, and sets continuously. `daySpeed` is a slider that scales how fast time passes.
+
+### How the shader uses sun position
+In `shading.frag`, `lightPosition.y` (world space Y of the sun) drives everything:
+- `directMask = smoothstep(-10, 50, sunLevel)` — direct sunlight fades out as the sun goes below Y=50, fully gone below Y=-10
+- `ambientMask = smoothstep(-300, 100, sunLevel)` — ambient light fades more slowly, simulating atmospheric scattering after sunset
+- The diffuse term `diff = dot(normal, lightDir) * directMask` — standard Lambertian diffuse, scaled to zero at night
+- `currentLightColor` blends from white to orange/red using `sunsetFactor` when the sun is near the horizon
+- Night adds a blue tint via `nightTint = vec3(0.05, 0.07, 0.15)` mixed in by `(1 - ambientFactor)`
+
+Using `lightPosition.y` (world space) rather than view space means the lighting is camera-angle independent.
+
+
+4.1 Shadow Generation
+
+2 Passes are made when terrain is generated:
+
+	1) Shadow Map: The Sun camera records the distance X between it and every pixel it can see and stores the value of it and the pixel.
+
+	2) Actual scene render: Takes each pixel's world position and transforms it into Sun's POV and checks the distance between it and the Sun. If the distance == X, this pixel is visible from the Sun's POV and is in light. Else, there is probably something is blocking it, and it is in shadow.
+
+These passes are made in every frame, since the position of Sun always changes.
+
+Issues: floating point rounding = make cause flickers due to inaccuracy
+
+
+4.2 Atmospheric Scattering *Program uses single scattering
+
+Uses 2 types of scattering
+1) Rayleigh scattering - light scatters off tiny air molecules
+2) Mie scattering - light scatters off larger particles such as dust
+
+Two large spheres are modelled: Earth and a slightly larger Atmosphere. Camera sits just above earth.
+For each pixel, a ray is fired from the camera in the pixel's view direction. The shader needs to know where this ray enters and exits the atmosphere sphere, because that defines the segment of atmosphere the light travels through.
+
+Each ray is divided into 16 small segments and each segment's contribution to the final colour is calculated separately (air density changes with altitude).
+For each sample point along the view ray, before sampling, a second ray is fired toward the sun, taking 8 samples along that path too. This calculates how much sunlight is blocked by the atmosphere before it even reaches this point. A sample point on the far side of Earth from the sun gets very little direct sunlight — producing the dark side of the sky at night.
+
+Beer's Law — the physical law describing how light is absorbed as it passes through a medium. The more atmosphere the light has passed through (accumulated depth), the more it's attenuated.
+
+Rayleigh scattering scatters light all around, making the sky is blue in all directions.
+Mie scattering is scatters mostly in the same direction as the light, causing a bright white halo around the sun.
+
+---
+
+## 5. Terrain Shading & Biomes (GPU, fragment shader)
+
+In `shading.frag`, the terrain colour is determined entirely by two values passed from the vertex shader: `height` (world Y position) and `modelNormal` (surface normal direction).
+
+```glsl
+float grassFactor = smoothstep(2.0, 16.0, height);   // sand → grass
+float rockFactor  = smoothstep(30.0, 36.0, height);  // grass → rock
+float snowFactor  = smoothstep(80.0, 86.0, height);  // rock → snow
+```
+
+`smoothstep(a, b, x)` returns 0 when x<a, 1 when x>b, and a smooth S-curve in between. Each zone blends smoothly into the next rather than having hard edges.
+
+Slope is also considered:
+```glsl
+float slope = 1.0 - normalize(modelNormal).y;
+```
+A flat surface has `normal.y = 1.0`, so `slope = 0`. A vertical cliff has `normal.y ≈ 0`, so `slope ≈ 1`. When slope exceeds 0.75, the shader blends to rock regardless of height, so steep cliff faces are always rocky even in the grass or snow zones.
+
+Below Y=0, the terrain darkens toward a deep abyss colour, simulating underwater depth.
+
+---
+
+## 6. Shadows (CPU setup, GPU rendering)
+
+### Shadow mapping — two-pass rendering
+Every frame is rendered **twice**:
+
+**Pass 1 — Shadow pass:** The scene is rendered from the sun's point of view using `simpleShaderProgram`, which only writes depth values into `shadowMapFBO` (a 2048×2048 texture). Front-face culling (`glCullFace(GL_FRONT)`) is enabled during this pass to avoid self-shadowing artifacts (Peter Panning). The result is a depth map: for every pixel the sun can see, it records how far away the nearest surface is.
+
+**Pass 2 — Camera pass:** The scene is rendered normally. In `shading.frag`, `calculateShadow()` transforms each fragment's world position into the light's clip space using `lightSpaceMatrix`, then samples the shadow map at that location. The hardware `sampler2DShadow` comparison automatically returns 1.0 if the fragment is closer to the light than what's stored (lit), or 0.0 if something is in front (shadowed).
+
+### Fitted shadow frustum
+The light's orthographic projection is computed each frame to fit exactly the camera's visible frustum. The 8 corners of the camera frustum are unprojected from NDC space to world space using `invProjView`, then transformed into light space. The min/max extents in light space define a tight ortho box. This means shadow map resolution is never wasted on terrain outside the camera view, which eliminates the horizon-darkening bug where the fixed ortho box didn't cover what the camera could see.
+
+---
+
+## 7. Grass — Instanced Rendering (CPU placement, GPU rendering)
+
+### Why instancing?
+Rendering hundreds of grass blades as separate draw calls would be extremely slow — one `glDrawArrays` call per blade. Instancing lets you draw thousands of copies of the same mesh in a **single draw call**, with per-instance data (position, normal) supplied via a separate buffer.
+
+### CPU placement — `generateGrass()`
+3000 random XZ positions are sampled across the terrain. For each one, `getHeightAt()` queries the terrain height at that point (rerunning the same noise function used to build the mesh, so it's always accurate). If the height falls in the grass zone (2–30 units, slope <0.75), the position and terrain normal are stored in `grassPositions` and `grassNormals` vectors. These are uploaded to the GPU as instance buffers via `glVertexAttribDivisor(4, 1)` — the `1` means "advance this attribute once per instance, not once per vertex."
+
+### GPU rendering — `shading.vert`
+When `isGrass = true`, the vertex shader:
+1. **Scales** the blade: `pos = position * 0.5` shrinks the mesh
+2. **Tilts** it to match terrain slope: builds a rotation matrix from the angle between world-up and the terrain normal using Rodrigues' rotation formula (axis-angle rotation), then rotates `pos` by that matrix so blades lean with the hillside
+3. **Animates wind**: `wave = sin(currentTime * 1.2 + instanceOffset.x)` — each blade uses its own X position as a phase offset, so they don't all sway in unison. The wave is multiplied by `pos.y` so only the tips sway while the base stays planted
+4. **Places** it in the world: `worldPos = pos + instanceOffset` — the `instanceOffset` is the per-blade position from the CPU buffer
+
+---
+
+## 8. Background / Sky (GPU)
+
+`background.vert` and `background.frag` draw a full-screen quad behind everything with `GL_DEPTH_TEST` disabled. The sky colour is sampled from an HDR environment map (`.hdr` file) using the inverse of the projection×view matrix to reconstruct the ray direction for each screen pixel. The sun position is passed in to draw the sun disc and the surrounding glow/gradient. Because it renders with depth test off and writes at maximum depth, it always appears behind all geometry.
+
+
+Clouds:
+All cloud positions are stored in one GPU buffer — cloudPosBuffer. At draw time, for each cloud the code uses glVertexAttribPointer with a byte offset (i * sizeof(vec3)) to point the instance attribute at that specific cloud's slot in the buffer, then draws 1 instance. This is a per-object draw rather than a true batched instanced draw, because different clouds use different meshes.
+
+Every frame in display(), each cloud's X position is incremented by windSpeed * deltaTime. When a cloud drifts past +halfWorld, it wraps back to -halfWorld on the other side, so clouds never disappear — they recycle continuously. The updated positions are re-uploaded to the GPU each frame with glBufferSubData.
+---
+
+## 9. Camera & Controls (CPU)
+
+The camera uses **free-look** with `lookAt(cameraPosition, cameraPosition + cameraDirection, worldUp)`. Mouse dragging applies yaw (rotate around Y axis) and pitch (rotate around the camera's right axis) to `cameraDirection` using rotation matrices. WASD moves along `cameraDirection` and `cameraRight`, QE moves vertically. All movement is multiplied by `deltaTime` (time since last frame in seconds) so speed is frame-rate independent.
+
+---
+
+## 10. The Full Per-Frame Pipeline
+
+Every frame executes in this order:
+1. **`handleEvents()`** — update camera position/direction from input
+2. **Update light position** — recalculate sun orbit angle from `currentTime`
+3. **Fit shadow frustum** — compute tight ortho box from camera frustum corners
+4. **Shadow pass** — render terrain + grass from sun's view into depth texture
+5. **Draw background** — sky/environment quad with depth test off
+6. **Camera pass** — render terrain, water, grass from camera view, sampling the shadow depth texture for each fragment
+7. **GUI** — ImGui overlays drawn on top
+
+
+"Why use instancing for grass and clouds?"
+A glDrawArrays call has significant CPU overhead. Issuing one call per grass blade (up to 10,000) would make the CPU the bottleneck. Instancing sends all position data to the GPU once and draws every blade in one call — the GPU handles the repetition internally, which is what it's designed for.
+
+"How does the shadow map resolution affect quality?"
+Your shadow map is 2048×2048. Each texel covers a portion of the light frustum. If the frustum is large (covering the whole world), each texel covers a large area, giving blocky shadows. The fitted frustum approach shrinks the coverage to just what's visible, so the same 2048×2048 texels cover a smaller area — higher effective resolution, sharper shadows.
+
+"What is deltaTime and why does everything multiply by it?"
+deltaTime is the time elapsed since the last frame in seconds. Multiplying speed by deltaTime makes movement frame-rate independent — at 30 FPS, deltaTime ≈ 0.033, at 60 FPS deltaTime ≈ 0.016, but speed * deltaTime covers the same distance per second regardless.
+
+"What is a uniform?"
+A uniform is a variable sent from the CPU to the GPU shader that stays constant for all vertices/fragments in one draw call. currentTime, lightPosition, lightSpaceMatrix are all uniforms — set once per frame by setUniformSlow, then read by every vertex or fragment shader invocation for that draw call.
+
+"Why is the terrain rendered with an index buffer but grass with glDrawArrays?"
+The terrain uses indexed rendering (glDrawElements) because vertices are shared between triangles — one vertex at a grid corner is referenced by up to 6 triangles. Storing it once and indexing it 6 times saves memory. Grass uses glDrawArrays because the OBJ loader stores vertices non-indexed (each triangle has its own copy of its vertices), so there's nothing to index.
+
+"What happens if you set numClouds to 0?"
+cloudPositions becomes empty, the if (!cloudModels.empty() && !cloudPositions.empty()) check fails, and neither the camera pass nor the shadow pass attempts to draw clouds. No crash, no rendering. The slider safely handles this case.

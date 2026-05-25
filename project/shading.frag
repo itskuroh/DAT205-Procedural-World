@@ -66,6 +66,7 @@ uniform vec3 lightPosition;
 out vec4 fragmentColor;
 
 uniform bool isGrass;
+uniform bool isCloud;
 uniform sampler2DShadow shadowMap;
 in vec4 vFragPosLightSpace;
 
@@ -136,6 +137,29 @@ void main()
     vec3 rockColor  = vec3(0.35, 0.33, 0.30);
     vec3 snowColor  = vec3(0.95, 0.95, 1.0);
 	vec3 terrainBase;
+
+    if (isCloud) {
+        vec3 n = normalize(mat3(viewInverse) * viewSpaceNormal);
+        float sunLit = max(dot(n, normalize(lightPosition)), 0.0);
+
+        // Base cloud colour — lit top vs shadowed underside
+        vec3 cloudCol = mix(vec3(0.35, 0.37, 0.45),   // dark underside at night
+                            vec3(1.0,  0.98, 0.96),    // sunlit top
+                            sunLit);
+
+        // Sunset orange tint
+        float sunHeight = normalize(lightPosition).y;
+        float sunset = pow(1.0 - max(sunHeight, 0.0), 3.0);
+        cloudCol = mix(cloudCol, vec3(1.0, 0.55, 0.2), sunset * 0.6);
+
+        // Night darkening — clouds go dark blue-grey at night
+        float nightFactor = smoothstep(-0.1, 0.3, sunHeight);
+        cloudCol = mix(vec3(0.08, 0.09, 0.13), cloudCol, nightFactor);
+
+        fragmentColor = vec4(cloudCol, 1.0);
+        return;
+    }
+
 
 	if (isGrass) {
 		vec3 darkGreen = vec3(0.02, 0.2, 0.02);

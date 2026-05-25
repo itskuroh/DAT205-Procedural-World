@@ -38,7 +38,7 @@ void main()
 	modelNormal = normalIn;
 
 	if (isGrass) {
-		float scale = 0.5;
+		float scale = 5.0;
 		pos = position * scale;
 
 		float baseOffset = 2.0;

@@ -28,7 +28,11 @@ static float computeHeight(float gx, float gz, float seedX, float seedZ)
 
     float h = 0.f;
     if (centered > 0.f) {
-        h = std::pow(centered, 3.f) * 150.f;
+        h = std::pow(centered, 2.f) * 160.f;        //2.f -> exponent
+
+        float peakBlend = glm::smoothstep(0.6f, 1.0f, centered);        //boosts peak when value is > 0.7 
+        h += peakBlend * peakBlend * 120.f;
+
         float detail = 1.f - std::abs(noise(glm::vec3(gx * 0.1f, 0.f, gz * 0.1f)));
         h += detail * 20.f * centered;
     }

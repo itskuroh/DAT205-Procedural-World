@@ -42,14 +42,22 @@ ivec2 g_prevMouseCoords = { -1, -1 };
 bool g_isMouseDragging = false;
 
 int grassCount = 100;
-const int maxGrassCount = 1000;
+const int maxGrassCount = 10000;
 float daySpeed = 0.5f;
+float dayAngle = 0.0f;
 
 const int   TERRAIN_GRID_W = 105;      // chunks along X
 const int   TERRAIN_GRID_H = 105;      // chunks along Z
 const int   TERRAIN_CHUNK_V = 33;      // vertices per chunk edge (must be 2^n+1)
 const float terrainScale = 1.5f;    // world units per vertex step (was hardcoded 1.5f before)
 float terrainSize = (TERRAIN_GRID_W * (TERRAIN_CHUNK_V - 1) * terrainScale) * 0.5f;
+
+//cloud globals
+std::vector<labhelper::Model*> cloudModels;
+std::vector<int> cloudModelIndices;
+std::vector<glm::vec3> cloudPositions;
+int numClouds = 20; // tune this
+GLuint cloudPosBuffer = 0;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Shader programs
@@ -238,7 +246,7 @@ void initialize()
 	///////////////////////////////////////////////////////////////////////
 	grassModel = labhelper::loadModelFromOBJ("../scenes/grass3.obj");
 	if (grassModel == nullptr) {
-		printf("ERROR: grass.obj not found!\n");
+		printf("ERROR: grass obj file not found!\n");
 	}
 	else {
 		printf("SUCCESS: Loaded %zu meshes for grass.\n", grassModel->m_meshes.size());
@@ -262,6 +270,38 @@ void initialize()
 	glVertexAttribDivisor(5, 1);
 
 	glBindVertexArray(0);
+
+	//load clouds
+	cloudModels.push_back(labhelper::loadModelFromOBJ("../scenes/CloudMedium.obj"));
+	cloudModels.push_back(labhelper::loadModelFromOBJ("../scenes/CloudSmall.obj"));
+	cloudModels.push_back(labhelper::loadModelFromOBJ("../scenes/CloudSmall2.obj"));
+	srand(42); // fixed seed so clouds are same every run
+	float halfWorld = terrainSize; // reuse your existing terrainSize
+	cloudModelIndices.clear();
+	for (int i = 0; i < numClouds; i++) {
+		float x = labhelper::uniform_randf(-halfWorld, halfWorld);
+		float z = labhelper::uniform_randf(-halfWorld, halfWorld);
+		float y = labhelper::uniform_randf(600.0f, 900.0f);
+		cloudPositions.push_back(glm::vec3(x, y, z));
+		cloudModelIndices.push_back(rand() % cloudModels.size()); // random model
+	}
+
+	// Upload positions to GPU as instance buffer
+	glGenBuffers(1, &cloudPosBuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, cloudPosBuffer);
+	glBufferData(GL_ARRAY_BUFFER,
+		cloudPositions.size() * sizeof(glm::vec3),
+		cloudPositions.data(), GL_DYNAMIC_DRAW); // DYNAMIC so we can update each frame
+
+	// Attach to cloud VAO at location 4 (instance offset, same as grass)
+	for (auto* model : cloudModels) {
+		glBindVertexArray(model->m_vaob);
+		glEnableVertexAttribArray(4);
+		glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+		glVertexAttribDivisor(4, 1);
+		glBindVertexArray(0);
+	}
+
 	///////////////////////////////////////////////////////////////////////
 	// Load environment map
 	///////////////////////////////////////////////////////////////////////
@@ -324,8 +364,11 @@ void generateGrass() {
 		// Call our new height function
 		float h = myTerrain.getHeightAt(x, z, terrainScale);
 
+		glm::vec3 normal = getTerrainNormal(x, z, terrainScale);
+		float slope = 1.0f - normal.y;
+
 		// Place grass only on the plains (above sand, below rock)
-		if (h > 30.0f && h < 36.0f) {
+		if (h > 2.0f && h < 35.0f && slope < 0.75f) {
 			grassPositions.push_back(glm::vec3(x, h, z));
 
 			grassNormals.push_back(getTerrainNormal(x, z, terrainScale));
@@ -436,6 +479,53 @@ void drawScene(GLuint currentShaderProgram,
 		glEnable(GL_CULL_FACE);
 		labhelper::setUniformSlow(currentShaderProgram, "isGrass", false);
 	}
+
+	//draw clouds
+	if (!cloudModels.empty() && !cloudPositions.empty()) {
+		glUseProgram(currentShaderProgram);
+		labhelper::setUniformSlow(currentShaderProgram, "isCloud", true);
+		labhelper::setUniformSlow(currentShaderProgram, "isGrass", false);
+
+		mat4 cloudMV = viewMatrix * mat4(1.0f);
+		labhelper::setUniformSlow(currentShaderProgram, "modelViewMatrix", cloudMV);
+		labhelper::setUniformSlow(currentShaderProgram, "modelViewProjectionMatrix",
+			projectionMatrix * cloudMV);
+		glDisable(GL_CULL_FACE);
+
+		// Upload ALL positions at once before drawing
+		glBindBuffer(GL_ARRAY_BUFFER, cloudPosBuffer);
+		glBufferSubData(GL_ARRAY_BUFFER, 0,
+			cloudPositions.size() * sizeof(glm::vec3),
+			cloudPositions.data());
+
+		// Draw each cloud with its assigned model
+		for (int i = 0; i < (int)cloudPositions.size(); i++) {
+			labhelper::Model* model = cloudModels[cloudModelIndices[i]];
+
+			glBindVertexArray(model->m_vaob);
+			// Point instance attribute to just this cloud's slot in the buffer
+			glBindBuffer(GL_ARRAY_BUFFER, cloudPosBuffer);
+			glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE,
+				sizeof(glm::vec3),
+				(void*)(i * sizeof(glm::vec3)));
+			for (const auto& mesh : model->m_meshes) {
+				glDrawArraysInstanced(GL_TRIANGLES,
+					mesh.m_start_index,
+					mesh.m_number_of_vertices,
+					1);
+			}
+		}
+
+		glBindVertexArray(0);
+		glEnable(GL_CULL_FACE);
+		labhelper::setUniformSlow(currentShaderProgram, "isCloud", false);
+
+		mat4 origMV = viewMatrix * mat4(1.0f);
+		labhelper::setUniformSlow(currentShaderProgram, "modelViewMatrix", origMV);
+		labhelper::setUniformSlow(currentShaderProgram, "modelViewProjectionMatrix",
+			projectionMatrix * origMV);
+	}
+
 }
 
 
@@ -468,7 +558,6 @@ void display(void)
 	vec3 vsLightDir = normalize(vec3(viewMatrix * vec4(-lightPosition, 0.0f)));
 
 	float radius = 1200.0f;
-	float dayAngle = currentTime * daySpeed * 0.1f;
 	lightPosition = vec3(0.0f, sin(dayAngle) * radius, cos(dayAngle) * radius);
 	vec3 sunDir = normalize(lightPosition);
 	vec3 shadowCenter = vec3(cameraPosition.x, 0.0f, cameraPosition.z);
@@ -491,7 +580,9 @@ void display(void)
 		lsMinY = min(lsMinY, ls.y); lsMaxY = max(lsMaxY, ls.y);
 		lsMinZ = min(lsMinZ, ls.z); lsMaxZ = max(lsMaxZ, ls.z);
 	}
-	lsMinZ -= 500.0f; // Pull near plane back so off-screen casters still cast shadows
+	lsMinZ -= 2000.0f;  // was 500.0f — pull back further to catch tall casters behind camera
+	lsMaxY += 400.0f;   // extend upward in light space to catch peak geometry
+	lsMinY -= 400.0f;   // extend downward symmetrically
 
 	mat4 lightProjMatrix = ortho(lsMinX, lsMaxX, lsMinY, lsMaxY, -lsMaxZ, -lsMinZ);
 	mat4 lightSpaceMatrix = lightProjMatrix * lightViewMatrix;
@@ -504,28 +595,44 @@ void display(void)
 	//simple shader for depth
 	glEnable(GL_CULL_FACE);
 	glCullFace(GL_FRONT);
-	//drawScene(simpleShaderProgram, lightViewMatrix, lightProjMatrix, lightViewMatrix, lightProjMatrix, vsLightDir);
+	drawScene(simpleShaderProgram, lightViewMatrix, lightProjMatrix, lightViewMatrix, lightProjMatrix, vsLightDir);
+
+	if (!cloudModels.empty() && !cloudPositions.empty()) {
+		glUseProgram(simpleShaderProgram);
+		glDisable(GL_CULL_FACE);
+		labhelper::setUniformSlow(simpleShaderProgram, "isCloud", true);
+		labhelper::setUniformSlow(simpleShaderProgram, "isGrass", false);
+
+		mat4 cloudMVP = lightProjMatrix * lightViewMatrix;
+		labhelper::setUniformSlow(simpleShaderProgram, "modelViewProjectionMatrix", cloudMVP);
+
+		for (int i = 0; i < (int)cloudPositions.size(); i++) {
+			labhelper::Model* model = cloudModels[cloudModelIndices[i]];
+
+			glBindBuffer(GL_ARRAY_BUFFER, cloudPosBuffer);
+			glBufferSubData(GL_ARRAY_BUFFER, i * sizeof(glm::vec3),
+				sizeof(glm::vec3), &cloudPositions[i]);
+
+			glBindVertexArray(model->m_vaob);
+			for (const auto& mesh : model->m_meshes) {
+				glDrawArraysInstanced(GL_TRIANGLES,
+					mesh.m_start_index,
+					mesh.m_number_of_vertices,
+					1);
+			}
+		}
+
+		glBindVertexArray(0);
+		glEnable(GL_CULL_FACE);
+		labhelper::setUniformSlow(simpleShaderProgram, "isCloud", false);
+	}
+
 	glCullFace(GL_BACK);
 
 	//final render to screen
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glViewport(0, 0, windowWidth, windowHeight);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-	///////////////////////////////////////////////////////////////////////////
-	// Bind the environment map(s) to unused texture units
-	///////////////////////////////////////////////////////////////////////////
-	//glActiveTexture(GL_TEXTURE6);
-	//glBindTexture(GL_TEXTURE_2D, environmentMap);
-	//glActiveTexture(GL_TEXTURE0);
-
-	///////////////////////////////////////////////////////////////////////////
-	// Draw from camera
-	///////////////////////////////////////////////////////////////////////////
-	//glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	//glViewport(0, 0, windowWidth, windowHeight);
-	//glClearColor(0.2f, 0.2f, 0.8f, 1.0f);
-	//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	//bind shadow map to texture unit 1
 	glActiveTexture(GL_TEXTURE1);
@@ -538,20 +645,24 @@ void display(void)
 	glUseProgram(shaderProgram);
 	labhelper::setUniformSlow(shaderProgram, "lightSpaceMatrix", lightSpaceMatrix);
 	labhelper::setUniformSlow(shaderProgram, "shadowMap", 1);
+
+	//draw clouds
+	// Animate clouds — drift them in wind direction, wrap around when out of bounds
+	float halfWorld = terrainSize;
+	float windSpeed = 20.0f; // world units per second
+	for (auto& pos : cloudPositions) {
+		pos.x += windSpeed * deltaTime;
+		// Wrap around so clouds never disappear
+		if (pos.x > halfWorld)  pos.x -= halfWorld * 2.0f;
+		if (pos.x < -halfWorld) pos.x += halfWorld * 2.0f;
+	}
+	// Re-upload updated positions to GPU
+	glBindBuffer(GL_ARRAY_BUFFER, cloudPosBuffer);
+	glBufferSubData(GL_ARRAY_BUFFER, 0,
+		cloudPositions.size() * sizeof(glm::vec3),
+		cloudPositions.data());
+
 	drawScene(shaderProgram, viewMatrix, projMatrix, lightViewMatrix, lightProjMatrix, vsLightDir);
-	//{
-	//	labhelper::perf::Scope s("Background");
-	//	glDisable(GL_DEPTH_TEST);
-	//	drawBackground(viewMatrix, projMatrix);
-	//	glEnable(GL_DEPTH_TEST);
-	//}
-	//{
-	//	labhelper::perf::Scope s( "Scene" );
-	//	glUseProgram(shaderProgram);
-	//	labhelper::setUniformSlow(shaderProgram, "lightSpaceMatrix", lightSpaceMatrix);
-	//	labhelper::setUniformSlow(shaderProgram, "shadowMap", 1); // Unit 1
-	//	drawScene( shaderProgram, viewMatrix, projMatrix, lightViewMatrix, lightProjMatrix );
-	//}
 	debugDrawLight(viewMatrix, projMatrix, vec3(lightPosition));
 
 }
@@ -670,6 +781,35 @@ void gui()
 	ImGui::Text("Water Control");
 	ImGui::SliderFloat("Sea Level", &waterHeight, -20.0f, 20.0f);
 
+	ImGui::Separator();
+	ImGui::Text("Cloud Density");
+	if (ImGui::SliderInt("Cloud count", &numClouds, 0, 60)) {
+		cloudPositions.clear();
+		cloudModelIndices.clear();  // ADD THIS LINE
+		srand(42);
+		float halfWorld = terrainSize;
+		for (int i = 0; i < numClouds; i++) {
+			float x = labhelper::uniform_randf(-halfWorld, halfWorld);
+			float z = labhelper::uniform_randf(-halfWorld, halfWorld);
+			float y = labhelper::uniform_randf(600.0f, 900.0f);
+			cloudPositions.push_back(glm::vec3(x, y, z));
+			cloudModelIndices.push_back(rand() % cloudModels.size());  // ADD THIS LINE
+		}
+		// Re-upload to GPU
+		glBindBuffer(GL_ARRAY_BUFFER, cloudPosBuffer);
+		glBufferData(GL_ARRAY_BUFFER,
+			cloudPositions.size() * sizeof(glm::vec3),
+			cloudPositions.data(), GL_DYNAMIC_DRAW);
+		// Re-attach instance buffer to VAO
+		for (auto* model : cloudModels) {
+			glBindVertexArray(model->m_vaob);
+			glEnableVertexAttribArray(4);
+			glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+			glVertexAttribDivisor(4, 1);
+			glBindVertexArray(0);
+		}
+	}
+
 	//ImGui::End();
 
 	////////////////////////////////////////////////////////////////////////////////
@@ -702,6 +842,7 @@ int main(int argc, char* argv[])
 		labhelper::newFrame(g_window);
 
 		// render to window
+		dayAngle += deltaTime * daySpeed * 0.1f;
 		display();
 
 		// Render overlay GUI.
